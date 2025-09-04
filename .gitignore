@@ -1,0 +1,21 @@
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+
+# Builds (if added later)
+dist/
+build/
+
+# Node (if added later)
+node_modules/
+
+# Env files
+.env
+.env.*

@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Gigi's Copy Tool",
+  "version": "0.1.0",
+  "description": "Save multiple text selections from any page and manage them in an in-page overlay.",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "scripting",
+    "clipboardWrite",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "commands": {
+    "save-selection": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+U"
+      },
+      "description": "Save current selection to Gigi's Copy Tool"
+    },
+    "toggle-popup": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Space",
+        "mac": "Command+Shift+O"
+      },
+      "description": "Open or toggle Gigi's Copy Tool overlay"
+    }
+  },
+  "action": {
+    "default_title": "Gigi's Copy Tool"
+  }
+}
