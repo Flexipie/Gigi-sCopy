@@ -5,7 +5,7 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
 ## Features
 
 - Save selected text via:
-  - Cmd/Ctrl+Shift+S (keyboard command), or
+  - Cmd/Ctrl+Shift+U (keyboard command), or
   - Right-click → "Save selection to Gigi's Copy Tool"
 - Visual feedback:
   - Brief toast ("Saved")
@@ -27,7 +27,7 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
 1. Open Chrome → go to `chrome://extensions`
 2. Enable "Developer mode" (top-right)
 3. Click "Load unpacked" and select this folder:
-   - `/Users/flexipie/Desktop/Code/Projects/HighlightForGigi`
+   - `/Users/flexipie/Desktop/Code/Projects/Gigi'sCopyTools/ChromeExtension`
 
 ## Usage
 
@@ -44,6 +44,21 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
 - Shortcuts can be adjusted at `chrome://extensions/shortcuts`.
 - Not available on restricted pages (e.g., `chrome://*`, Chrome Web Store). For `file://` pages, enable "Allow access to file URLs" for this extension in `chrome://extensions`.
 - Clipboard operations use the extension page context.
+
+## Desktop Bridge (Native Messaging)
+
+- This extension can import clips captured by the macOS helper (GigiCopyHelper) via Chrome Native Messaging.
+- Ensure your extension has the `nativeMessaging` and `alarms` permissions (already present in `manifest.json`).
+- Install the native host manifest using the helper repo script and your extension ID. See:
+  - GigiCopyHelper/README.md → "Install the Chrome Native Messaging Host Manifest"
+- The background service worker connects to `com.gigi.copytool` periodically and merges incoming `{type: 'clip'}` messages into `chrome.storage.local`, routing to the current folder.
+
+## Shortcuts in Chrome
+
+- Chrome may not auto-assign suggested shortcuts for unpacked extensions.
+- Set them manually at `chrome://extensions/shortcuts`:
+  - Save selection: Command+Shift+U (macOS)
+  - Toggle overlay: Command+Shift+O (macOS)
 
 ## Development
 

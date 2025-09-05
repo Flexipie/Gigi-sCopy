@@ -2,6 +2,7 @@
 // Handles commands, context menu, selection capture, storage, and overlay UI
 
 const MENU_ID = 'quickmulticlip_save_selection';
+const NATIVE_HOST = 'com.gigi.copytool';
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
@@ -10,10 +11,68 @@ chrome.runtime.onInstalled.addListener(async () => {
       title: "Save selection to Gigi's Copy Tool",
       contexts: ['selection']
     });
+    // poll the native host periodically to import desktop clips
+    chrome.alarms.create('desktop-drain', { periodInMinutes: 0.083 }); // ~5s
+    // do an immediate drain on install to avoid waiting for first alarm
+    drainDesktopQueue();
   } catch (e) {
     // Ignore if already exists
   }
 });
+
+// also recreate the alarm on browser startup (MV3 SW can be restarted)
+if (chrome.runtime.onStartup) {
+  chrome.runtime.onStartup.addListener(() => {
+    try { chrome.alarms.create('desktop-drain', { periodInMinutes: 0.083 }); } catch (_) {}
+    // immediate drain on startup
+    drainDesktopQueue();
+  });
+}
+
+// ---- Native Messaging bridge (desktop helper) ----
+if (chrome.alarms && chrome.alarms.onAlarm && typeof chrome.alarms.onAlarm.addListener === 'function') {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm && alarm.name === 'desktop-drain') drainDesktopQueue();
+  });
+}
+
+async function drainDesktopQueue() {
+  try {
+    const port = chrome.runtime.connectNative(NATIVE_HOST);
+    port.onMessage.addListener(async (msg) => {
+      if (!msg || msg.type !== 'clip' || typeof msg.text !== 'string') return;
+
+      const createdAt = msg.createdAt ? Math.round(Number(msg.createdAt) * 1000) : Date.now();
+      const app = typeof msg.app === 'string' ? msg.app : 'Desktop';
+
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const { clips = [], activeFolderId = null } = await chrome.storage.local.get({ clips: [], activeFolderId: null });
+      const clip = {
+        id,
+        text: msg.text,
+        title: app, // use app name as a friendly title fallback
+        url: '',
+        createdAt,
+        folderId: activeFolderId || null,
+        source: 'native'
+      };
+      clips.push(clip);
+      await chrome.storage.local.set({ clips });
+    });
+    port.onDisconnect.addListener(() => {
+      const err = chrome.runtime.lastError;
+      if (!err) return;
+      const msg = String(err.message || '').toLowerCase();
+      // ignore normal exit noise
+      if (msg.includes('native host has exited')) return;
+      console.warn('Native host disconnect:', err.message);
+    });
+    // Ask host to drain queued items and exit
+    port.postMessage({ type: 'drain' });
+  } catch (_) {
+    // host may not be installed; ignore quietly
+  }
+}
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === MENU_ID && tab?.id != null) {
