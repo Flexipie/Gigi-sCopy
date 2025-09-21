@@ -29,6 +29,53 @@ if (chrome.runtime.onStartup) {
   });
 }
 
+// Normalization and dedup helpers
+function normalizeText(text) {
+  return (text || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function hashString(s) {
+  // Simple 32-bit hash
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return String(h >>> 0);
+}
+
+async function saveClipWithDedup(partial) {
+  try {
+    const { text, title = '', url = '', createdAt = Date.now(), folderId = null, source } = partial || {};
+    const norm = normalizeText(text);
+    if (!norm) return null;
+    const hash = hashString(norm);
+
+    const { clips = [] } = await chrome.storage.local.get({ clips: [] });
+
+    let idx = clips.findIndex(c => {
+      if (!c) return false;
+      if (typeof c.hash === 'string') return c.hash === hash;
+      const ct = normalizeText(c.text || '');
+      return ct && hashString(ct) === hash;
+    });
+
+    if (idx >= 0) {
+      const existing = clips[idx];
+      const dupCount = Number(existing.dupCount || 1) + 1;
+      clips[idx] = { ...existing, dupCount, updatedAt: Date.now(), hash: existing.hash || hash };
+    } else {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const clip = { id, text, title, url, createdAt, folderId, starred: false, dupCount: 1, hash, source };
+      clips.push(clip);
+    }
+    await chrome.storage.local.set({ clips });
+    return true;
+  } catch (e) {
+    console.warn('saveClipWithDedup error', e);
+    return null;
+  }
+}
+
 // ---- Native Messaging bridge (desktop helper) ----
 if (chrome.alarms && chrome.alarms.onAlarm && typeof chrome.alarms.onAlarm.addListener === 'function') {
   chrome.alarms.onAlarm.addListener((alarm) => {
@@ -44,20 +91,15 @@ async function drainDesktopQueue() {
 
       const createdAt = msg.createdAt ? Math.round(Number(msg.createdAt) * 1000) : Date.now();
       const app = typeof msg.app === 'string' ? msg.app : 'Desktop';
-
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const { clips = [], activeFolderId = null } = await chrome.storage.local.get({ clips: [], activeFolderId: null });
-      const clip = {
-        id,
+      const { activeFolderId = null } = await chrome.storage.local.get({ activeFolderId: null });
+      await saveClipWithDedup({
         text: msg.text,
-        title: app, // use app name as a friendly title fallback
+        title: app,
         url: '',
         createdAt,
         folderId: activeFolderId || null,
         source: 'native'
-      };
-      clips.push(clip);
-      await chrome.storage.local.set({ clips });
+      });
     });
     port.onDisconnect.addListener(() => {
       const err = chrome.runtime.lastError;
@@ -160,19 +202,16 @@ async function handleSaveSelection(tabId, tabMeta) {
     return;
   }
 
-  // 2) Save to storage (prefer tab metadata for title/url) and attach active folder if set
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const { clips = [], activeFolderId = null } = await chrome.storage.local.get({ clips: [], activeFolderId: null });
-  const clip = {
-    id,
+  // 2) Save to storage with dedup (prefer tab metadata for title/url) and attach active folder if set
+  const { activeFolderId = null } = await chrome.storage.local.get({ activeFolderId: null });
+  await saveClipWithDedup({
     text,
     title: tabMeta?.title || '',
     url: tabMeta?.url || '',
     createdAt: Date.now(),
-    folderId: activeFolderId || null
-  };
-  clips.push(clip);
-  await chrome.storage.local.set({ clips });
+    folderId: activeFolderId || null,
+    source: 'web'
+  });
 
   // 3) Visual feedback: highlight selection + toast in the correct frame
   if (Array.isArray(best?.rects) && best.rects.length > 0) {

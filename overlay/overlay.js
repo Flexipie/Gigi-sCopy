@@ -574,6 +574,15 @@
         if (url) { const a = document.createElement('a'); a.href=url; a.textContent = fmtUrl(url); a.target='_blank'; a.rel='noreferrer noopener'; meta.append(a); }
         left.appendChild(meta);
       }
+      // Show duplicate count if > 1 (defaults to 1 when missing)
+      const dupCountVal = Number(clip.dupCount || 1);
+      if (dupCountVal > 1) {
+        if (!(title || url)) { meta.textContent = ''; left.appendChild(meta); }
+        if (meta.childNodes.length > 0) meta.append(document.createTextNode(' • '));
+        const dcSpan = document.createElement('span');
+        dcSpan.textContent = `×${dupCountVal}`;
+        meta.append(dcSpan);
+      }
       const btns = document.createElement('div'); btns.className = 'btns';
       const starBtn = document.createElement('button');
       starBtn.className = 'icon-btn btn-star' + (clip.starred ? ' starred' : '');
@@ -675,7 +684,25 @@
       li.append(left); li.append(btns); listEl.append(li);
     }
   }
-  async function loadAndRender(){ const { clips=[] } = await chrome.storage.local.get({ clips: [] }); render(clips); }
+  async function loadAndRender(){
+    const { clips=[] } = await chrome.storage.local.get({ clips: [] });
+    // Light migration: ensure dupCount defaults to 1 for legacy items
+    let migrated = false;
+    const next = clips.map(c => {
+      if (!c || typeof c !== 'object') return c;
+      if (typeof c.dupCount !== 'number' || !isFinite(c.dupCount) || c.dupCount <= 0) {
+        migrated = true;
+        return { ...c, dupCount: 1 };
+      }
+      return c;
+    });
+    if (migrated) {
+      try { await chrome.storage.local.set({ clips: next }); } catch(_) {}
+      render(next);
+    } else {
+      render(clips);
+    }
+  }
 
   function formatMulti(items, fmt) {
     if (fmt === 'numbers') return items.map((c,i)=>`${i+1}. ${c.text||''}`).join('\n');
