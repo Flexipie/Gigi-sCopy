@@ -87,6 +87,8 @@
       .meta { color: #9aa4b2; font-size: 10.5px; margin-top: 4px; }
       .meta a { color: #38bdf8; text-decoration: none; word-break: break-all; }
       .meta a:hover { text-decoration: underline; }
+      .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+      .tag { font-size: 10px; padding: 2px 6px; border: 1px solid #2a3a60; border-radius: 999px; color: #c7d2e0; background: transparent; }
 
       .btn-star { width: 30px; height: 30px; min-width: 30px; text-align: center; border-color: #2a3a60; background: transparent; color: #e5edf5; padding: 0; }
       .btn-star.starred { color: #0b1b29; background: #ffd166; border-color: #ffd166; }
@@ -172,6 +174,7 @@
         #toast { background: #e6f7ff; color: #083041; border-color: #b6e6ff; }
         .clip.collapsed .text::after { background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,1)); }
         .edit-input { background: #ffffff; color: #0b1b29; border-color: #d3e0ef; }
+        .tag { border-color: #e2e8f0; color: #334155; }
         .expand-btn { color: #64748b; }
         .settings-popover { background: #ffffff; border-color: #e2e8f0; }
         /* Stronger hover cue for copy & star in light mode */
@@ -274,6 +277,9 @@
       </div>
       <div class="toolbar">
         <input id="search" type="search" placeholder="Search clips..." />
+        <select id="tag-filter" title="Tag filter">
+          <option value="">All tags</option>
+        </select>
         <select id="folder" title="Folder">
           <option value="">All</option>
         </select>
@@ -307,6 +313,7 @@
   const addFolderBtn = shadow.getElementById('folder-add');
   const delFolderBtn = shadow.getElementById('folder-del');
   const formatSel = shadow.getElementById('format');
+  const tagFilterSel = shadow.getElementById('tag-filter');
   const resizeHandle = shadow.getElementById('resize-handle');
   const wrapEl = shadow.querySelector('.wrap');
   // Make overlay container focusable so it can receive key events
@@ -318,6 +325,8 @@
   let copyFormat = 'bullets';
   let folders = [];
   let activeFolderId = null;
+  let allTags = [];
+  let currentTagFilter = '';
   // Resize state
   let resizing = false; let startRX = 0, startRY = 0, startW = 0, startH = 0;
 
@@ -407,6 +416,18 @@
         <div style="min-width:56px;">Motion</div>
         <label><input type="checkbox" id="reduce-motion"> Reduce motion</label>
       </div>
+      <hr />
+      <h4>Tag Rules</h4>
+      <div class="row" id="rules-list" style="flex-direction:column; gap:6px;"></div>
+      <div class="row" style="gap:6px; align-items:center;">
+        <select id="rule-type">
+          <option value="url-contains">URL contains</option>
+          <option value="text-regex">Text matches regex</option>
+        </select>
+        <input id="rule-pattern" placeholder="pattern or regex" style="flex:1;" />
+        <input id="rule-tags" placeholder="tags (comma-separated)" style="flex:1;" />
+        <button id="rule-add" class="btn-primary">Add</button>
+      </div>
     `;
     wrapEl.appendChild(settingsPopoverEl);
     const radios = settingsPopoverEl.querySelectorAll('input[name="qmc-theme"]');
@@ -419,6 +440,56 @@
       rm.checked = !!reduceMotion;
       rm.addEventListener('change', ()=>{ saveReduceMotion(rm.checked); showToast(rm.checked ? 'Reduced motion on' : 'Reduced motion off'); });
     }
+    // Tag rules: load, render, add/remove
+    async function loadRules(){
+      try {
+        const { tagRules=[] } = await chrome.storage.local.get({ tagRules: [] });
+        const listEl = settingsPopoverEl.querySelector('#rules-list');
+        listEl.textContent = '';
+        if (!Array.isArray(tagRules) || tagRules.length === 0) {
+          const empty = document.createElement('div'); empty.textContent = 'No rules yet.'; empty.style.color = '#9aa4b2'; listEl.appendChild(empty);
+          return;
+        }
+        tagRules.forEach((r, idx) => {
+          const row = document.createElement('div'); row.style.display='flex'; row.style.gap='6px'; row.style.alignItems='center';
+          const span = document.createElement('div'); span.style.fontSize='12px'; span.style.flex='1';
+          const tags = (Array.isArray(r.tags)?r.tags:[]).join(', ');
+          span.textContent = `${r.type || ''} • ${r.pattern || ''} → [${tags}]`;
+          const del = document.createElement('button'); del.className='btn-danger'; del.textContent = 'Delete';
+          del.addEventListener('click', async ()=>{
+            try {
+              const { tagRules: cur=[] } = await chrome.storage.local.get({ tagRules: [] });
+              const next = cur.filter((_, i)=> i !== idx);
+              await chrome.storage.local.set({ tagRules: next });
+              showToast('Rule deleted');
+              await loadRules();
+            } catch(_) {}
+          });
+          row.append(span, del);
+          listEl.appendChild(row);
+        });
+      } catch(_) {}
+    }
+    const addBtn = settingsPopoverEl.querySelector('#rule-add');
+    addBtn?.addEventListener('click', async ()=>{
+      try {
+        const typeSel = settingsPopoverEl.querySelector('#rule-type');
+        const patternInp = settingsPopoverEl.querySelector('#rule-pattern');
+        const tagsInp = settingsPopoverEl.querySelector('#rule-tags');
+        const type = typeSel?.value || 'url-contains';
+        const pattern = (patternInp?.value || '').trim();
+        const tags = (tagsInp?.value || '').split(',').map(s=>s.trim()).filter(Boolean);
+        if (!pattern || tags.length === 0) { showToast('Enter pattern and tags'); return; }
+        const { tagRules: cur=[] } = await chrome.storage.local.get({ tagRules: [] });
+        const next = [...cur, { type, pattern, tags }];
+        await chrome.storage.local.set({ tagRules: next });
+        showToast('Rule added');
+        if (patternInp) patternInp.value = '';
+        if (tagsInp) tagsInp.value = '';
+        await loadRules();
+      } catch(_){ showToast('Failed to add rule'); }
+    });
+    loadRules();
     shadow.addEventListener('mousedown', onOutsideDown, true);
   }
 
@@ -475,6 +546,26 @@
       const u = (c.url||'').toLowerCase();
       return t.includes(q) || ti.includes(q) || u.includes(q);
     });
+  }
+  function uniqueTagsFromClips(items){
+    const set = new Set();
+    for (const c of items) {
+      if (Array.isArray(c.tags)) { c.tags.filter(Boolean).forEach(t=>set.add(String(t))); }
+    }
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  }
+  function fillTagFilterSelect(){
+    if (!tagFilterSel) return;
+    const cur = tagFilterSel.value || '';
+    tagFilterSel.textContent = '';
+    const optAll = document.createElement('option'); optAll.value=''; optAll.textContent='All tags'; tagFilterSel.append(optAll);
+    for (const t of (allTags||[])) { const o=document.createElement('option'); o.value=t; o.textContent=t; tagFilterSel.append(o); }
+    tagFilterSel.value = currentTagFilter || cur || '';
+  }
+  function applyTagFilter(items){
+    const tag = (currentTagFilter||'').trim();
+    if (!tag) return items;
+    return items.filter(c => Array.isArray(c.tags) && c.tags.includes(tag));
   }
   const expandedIds = new Set();
   // Selection state for keyboard navigation
@@ -555,10 +646,11 @@
       });
     const inFolder = activeFolderId ? items.filter(c=>c.folderId===activeFolderId) : items;
     const filtered = applyFilter(inFolder);
+    const tagFiltered = applyTagFilter(filtered);
     listEl.textContent = '';
-    if (!filtered.length) { emptyEl.hidden = false; return; }
+    if (!tagFiltered.length) { emptyEl.hidden = false; return; }
     emptyEl.hidden = true;
-    for (const clip of filtered) {
+    for (const clip of tagFiltered) {
       const li = document.createElement('li'); li.className = 'clip collapsed'; li.tabIndex = 0;
       li.dataset.id = clip.id;
       if (clip.id === selectedClipId) li.classList.add('selected');
@@ -582,6 +674,15 @@
         const dcSpan = document.createElement('span');
         dcSpan.textContent = `×${dupCountVal}`;
         meta.append(dcSpan);
+      }
+      // Tag chips
+      if (Array.isArray(clip.tags) && clip.tags.length) {
+        const tagsDiv = document.createElement('div'); tagsDiv.className='tags';
+        for (const tg of clip.tags) {
+          const chip = document.createElement('span'); chip.className='tag'; chip.textContent=String(tg);
+          tagsDiv.appendChild(chip);
+        }
+        left.appendChild(tagsDiv);
       }
       const btns = document.createElement('div'); btns.className = 'btns';
       const starBtn = document.createElement('button');
@@ -696,6 +797,9 @@
       }
       return c;
     });
+    // Compute unique tags and fill selector
+    allTags = uniqueTagsFromClips(next);
+    fillTagFilterSelect();
     if (migrated) {
       try { await chrome.storage.local.set({ clips: next }); } catch(_) {}
       render(next);
@@ -743,6 +847,9 @@
   // Search filtering
   if (searchInput) {
     searchInput.addEventListener('input', ()=>{ filterText = searchInput.value || ''; loadAndRender(); });
+  }
+  if (tagFilterSel) {
+    tagFilterSel.addEventListener('change', ()=>{ currentTagFilter = tagFilterSel.value || ''; loadAndRender(); });
   }
 
   // Focus the overlay when clicking anywhere non-interactive so keyboard shortcuts work
@@ -900,16 +1007,14 @@
     });
   } catch(_){}
 
-  chrome.storage.onChanged.addListener((changes, area)=>{
-    if(area!=='local') return;
-    if('clips' in changes){ render(changes.clips.newValue || []); }
-    if('overlayTheme' in changes){ applyTheme(changes.overlayTheme.newValue || 'auto'); }
-    if('overlayReduceMotion' in changes){
-      hasUserReduceMotionPref = true;
-      applyReduceMotion(!!changes.overlayReduceMotion.newValue);
-    }
-    if('folders' in changes){ folders = changes.folders.newValue || []; fillFolderSelect(); }
-    if('activeFolderId' in changes){ activeFolderId = changes.activeFolderId.newValue || null; if (folderSel) folderSel.value = activeFolderId || ''; loadAndRender(); }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if ('overlayTheme' in changes) { const val = changes.overlayTheme.newValue; if (val) applyTheme(val); }
+    if ('overlayReduceMotion' in changes) { applyReduceMotion(!!changes.overlayReduceMotion.newValue); }
+    if ('folders' in changes) { folders = changes.folders.newValue || []; fillFolderSelect(); }
+    if ('activeFolderId' in changes) { activeFolderId = changes.activeFolderId.newValue || null; if (folderSel) folderSel.value = activeFolderId || ''; loadAndRender(); }
+    if ('clips' in changes) { loadAndRender(); }
+    if ('tagRules' in changes) { /* rules impact saving; UI lists them in settings only */ }
   });
 
   // Dragging

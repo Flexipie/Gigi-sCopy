@@ -50,6 +50,9 @@ async function saveClipWithDedup(partial) {
     if (!norm) return null;
     const hash = hashString(norm);
 
+    // Evaluate tag rules for this clip
+    const tagsToAdd = await evaluateTags(text || '', url || '');
+
     const { clips = [] } = await chrome.storage.local.get({ clips: [] });
 
     let idx = clips.findIndex(c => {
@@ -62,10 +65,13 @@ async function saveClipWithDedup(partial) {
     if (idx >= 0) {
       const existing = clips[idx];
       const dupCount = Number(existing.dupCount || 1) + 1;
-      clips[idx] = { ...existing, dupCount, updatedAt: Date.now(), hash: existing.hash || hash };
+      // Merge tags (unique)
+      const existingTags = Array.isArray(existing.tags) ? existing.tags.filter(Boolean) : [];
+      const mergedTags = Array.from(new Set([...existingTags, ...tagsToAdd]));
+      clips[idx] = { ...existing, dupCount, updatedAt: Date.now(), hash: existing.hash || hash, tags: mergedTags };
     } else {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const clip = { id, text, title, url, createdAt, folderId, starred: false, dupCount: 1, hash, source };
+      const clip = { id, text, title, url, createdAt, folderId, starred: false, dupCount: 1, hash, source, tags: tagsToAdd };
       clips.push(clip);
     }
     await chrome.storage.local.set({ clips });
@@ -73,6 +79,41 @@ async function saveClipWithDedup(partial) {
   } catch (e) {
     console.warn('saveClipWithDedup error', e);
     return null;
+  }
+}
+
+async function evaluateTags(text, url) {
+  try {
+    const { tagRules = [] } = await chrome.storage.local.get({ tagRules: [] });
+    if (!Array.isArray(tagRules) || tagRules.length === 0) return [];
+    const out = new Set();
+    const t = String(text || '');
+    const u = String(url || '');
+    for (const r of tagRules) {
+      if (!r || typeof r !== 'object') continue;
+      const type = String(r.type || '');
+      const pattern = String(r.pattern || '');
+      const ruleTags = Array.isArray(r.tags) ? r.tags.map(x => String(x || '').trim()).filter(Boolean) : [];
+      if (ruleTags.length === 0) continue;
+      if (type === 'url-contains') {
+        if (!pattern) continue;
+        if (u.toLowerCase().includes(pattern.toLowerCase())) {
+          ruleTags.forEach(tag => out.add(tag));
+        }
+      } else if (type === 'text-regex') {
+        if (!pattern) continue;
+        try {
+          const re = new RegExp(pattern, 'i');
+          if (re.test(t)) ruleTags.forEach(tag => out.add(tag));
+        } catch (_) {
+          // invalid regex; ignore this rule safely
+        }
+      }
+    }
+    return Array.from(out);
+  } catch (e) {
+    console.warn('evaluateTags error', e);
+    return [];
   }
 }
 
