@@ -120,7 +120,7 @@ flowchart LR
 
 ## 11) Version control plan
 
-- Branching: `feature/dedup-autotag`
+- Branching: `main` for this checkpoint (planned branch `feature/dedup-autotag` for future iterations)
 - Commits (at least 3 meaningful):
   - "feat(dedup): normalized hashing and dupCount on save"
   - "feat(tags): rules editor and rule evaluation on save"
