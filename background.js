@@ -29,6 +29,17 @@ if (chrome.runtime.onStartup) {
   });
 }
 
+// Recompute tags retroactively when Tag Rules change (register on every SW start)
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if ('tagRules' in changes) {
+      clearTimeout(globalThis.__qmc_recomputeTagsTimer);
+      globalThis.__qmc_recomputeTagsTimer = setTimeout(() => { recomputeAllTags(); }, 120);
+    }
+  });
+} catch(_) {}
+
 // Normalization and dedup helpers
 function normalizeText(text) {
   return (text || "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -82,14 +93,14 @@ async function saveClipWithDedup(partial) {
   }
 }
 
-async function evaluateTags(text, url) {
+function evaluateTagsWithRules(tagRules, text, url) {
   try {
-    const { tagRules = [] } = await chrome.storage.local.get({ tagRules: [] });
-    if (!Array.isArray(tagRules) || tagRules.length === 0) return [];
+    const rules = Array.isArray(tagRules) ? tagRules : [];
+    if (!rules.length) return [];
     const out = new Set();
     const t = String(text || '');
     const u = String(url || '');
-    for (const r of tagRules) {
+    for (const r of rules) {
       if (!r || typeof r !== 'object') continue;
       const type = String(r.type || '');
       const pattern = String(r.pattern || '');
@@ -112,8 +123,42 @@ async function evaluateTags(text, url) {
     }
     return Array.from(out);
   } catch (e) {
+    console.warn('evaluateTagsWithRules error', e);
+    return [];
+  }
+}
+
+async function evaluateTags(text, url) {
+  try {
+    const { tagRules = [] } = await chrome.storage.local.get({ tagRules: [] });
+    return evaluateTagsWithRules(tagRules, text, url);
+  } catch (e) {
     console.warn('evaluateTags error', e);
     return [];
+  }
+}
+
+async function recomputeAllTags() {
+  try {
+    const [{ clips = [] }, { tagRules = [] }] = await Promise.all([
+      chrome.storage.local.get({ clips: [] }),
+      chrome.storage.local.get({ tagRules: [] })
+    ]);
+    let changed = false;
+    const next = clips.map(c => {
+      if (!c || typeof c !== 'object') return c;
+      const newTags = evaluateTagsWithRules(tagRules, c.text || '', c.url || '');
+      const oldTags = Array.isArray(c.tags) ? c.tags.filter(Boolean) : [];
+      // Compare as sets (order-insensitive)
+      const a = Array.from(new Set(newTags));
+      const b = Array.from(new Set(oldTags));
+      const eq = a.length === b.length && a.every(t => b.includes(t));
+      if (!eq) { changed = true; return { ...c, tags: a }; }
+      return c;
+    });
+    if (changed) await chrome.storage.local.set({ clips: next });
+  } catch (e) {
+    console.warn('recomputeAllTags error', e);
   }
 }
 
