@@ -19,8 +19,18 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
   - Inline edit a clip
   - Undo delete via toast
   - Keyboard navigation (↑/↓ select, Enter copy, Del delete, A copy-all)
-  - Settings: Theme (Auto/Light/Dark) + Reduce Motion toggle
+  - Tag chips per clip
+  - Tag filter dropdown in the toolbar
+  - Settings: Theme (Auto/Light/Dark), Reduce Motion, and Tag Rules editor (add/remove rules)
 - Works inside iframes
+
+- Smart Deduplication on save
+  - Saves identical or whitespace/case-only variations as a single clip, incrementing a small ×N indicator.
+  - Keeps storage tidy; existing clip’s `dupCount` increases and `updatedAt` is set.
+
+- Auto-Tag Rules + Retroactive updates
+  - Rule types: URL contains <substring>, Text matches regex.
+  - Tags are applied on save and recomputed for all existing clips whenever rules change (add/remove).
 
 ## Install (Developer Mode)
 
@@ -38,12 +48,25 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
   - "Delete" to remove a single clip
   - "Copy all" to copy all clips as a bulleted list
   - "Clear" to remove all clips (with confirmation)
+  - Use the Tag filter dropdown to show only clips with a specific tag
+  - Open Settings (gear) → Tag Rules to add/remove rules
+    - Example: URL contains `stackoverflow.com` → tag `StackOverflow`
+    - Example: Text matches regex `\bTODO\b` → tag `Notes`
+  - Tags apply retroactively: editing rules updates existing clips automatically
+  - A small ×N on a clip indicates duplicate saves (dedup)
 
 ## Notes
 
 - Shortcuts can be adjusted at `chrome://extensions/shortcuts`.
 - Not available on restricted pages (e.g., `chrome://*`, Chrome Web Store). For `file://` pages, enable "Allow access to file URLs" for this extension in `chrome://extensions`.
 - Clipboard operations use the extension page context.
+
+### Known limitations
+
+- Some complex web editors (e.g., Google Docs) render selections on a virtual surface; the standard Selection API may return empty text. Workarounds:
+  - Use the document’s "Publish to the web" (view-only HTML) and capture from the published page
+  - Download as HTML and open locally (enable "Allow access to file URLs")
+  - Optional: use the macOS helper to capture via the OS clipboard
 
 ## Desktop Bridge (Native Messaging)
 
