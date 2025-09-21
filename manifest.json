@@ -9,7 +9,7 @@
     "scripting",
     "clipboardWrite",
     "alarms",
-    "tabs",
+    "activeTab",
     "nativeMessaging"
   ],
   "host_permissions": [
