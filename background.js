@@ -165,39 +165,77 @@ async function recomputeAllTags() {
 // ---- Native Messaging bridge (desktop helper) ----
 if (chrome.alarms && chrome.alarms.onAlarm && typeof chrome.alarms.onAlarm.addListener === 'function') {
   chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm && alarm.name === 'desktop-drain') drainDesktopQueue();
+    if (alarm && alarm.name === 'desktop-drain') {
+      console.log('Native: alarm fired, starting drain...');
+      drainDesktopQueue();
+    }
   });
 }
 
 async function drainDesktopQueue() {
+  console.log('Native: drainDesktopQueue() called');
   try {
+    console.log('Native: connecting to host:', NATIVE_HOST);
     const port = chrome.runtime.connectNative(NATIVE_HOST);
-    port.onMessage.addListener(async (msg) => {
-      if (!msg || msg.type !== 'clip' || typeof msg.text !== 'string') return;
-
-      const createdAt = msg.createdAt ? Math.round(Number(msg.createdAt) * 1000) : Date.now();
-      const app = typeof msg.app === 'string' ? msg.app : 'Desktop';
-      const { activeFolderId = null } = await chrome.storage.local.get({ activeFolderId: null });
-      await saveClipWithDedup({
-        text: msg.text,
-        title: app,
-        url: '',
-        createdAt,
-        folderId: activeFolderId || null,
-        source: 'native'
-      });
+    console.log('Native: port connected');
+    const receivedMsgs = [];
+    
+    port.onMessage.addListener((msg) => {
+      // Collect messages synchronously
+      console.log('Native: raw message received:', JSON.stringify(msg));
+      if (msg && msg.type === 'clip' && typeof msg.text === 'string') {
+        receivedMsgs.push(msg);
+        console.log('Native: valid clip received', { id: msg.id, textLength: msg.text.length, preview: msg.text.substring(0, 50) });
+      } else {
+        console.warn('Native: invalid message format:', msg);
+      }
     });
-    port.onDisconnect.addListener(() => {
+    
+    port.onDisconnect.addListener(async () => {
+      console.log('Native: port disconnected');
       const err = chrome.runtime.lastError;
-      if (!err) return;
-      const msg = String(err.message || '').toLowerCase();
-      // ignore normal exit noise
-      if (msg.includes('native host has exited')) return;
-      console.warn('Native host disconnect:', err.message);
+      if (err) {
+        const msg = String(err.message || '').toLowerCase();
+        console.log('Native: disconnect error:', err.message);
+        // ignore normal exit noise
+        if (!msg.includes('native host has exited')) {
+          console.warn('Native host disconnect:', err.message);
+        }
+      }
+      
+      // Process all received messages after disconnect
+      console.log(`Native: processing ${receivedMsgs.length} clips from queue`);
+      const { activeFolderId = null } = await chrome.storage.local.get({ activeFolderId: null });
+      console.log('Native: active folder:', activeFolderId);
+      
+      for (let i = 0; i < receivedMsgs.length; i++) {
+        const m = receivedMsgs[i];
+        console.log(`Native: saving clip ${i + 1}/${receivedMsgs.length}`);
+        const createdAt = m.createdAt ? Math.round(Number(m.createdAt) * 1000) : Date.now();
+        const app = typeof m.app === 'string' ? m.app : 'Desktop';
+        const result = await saveClipWithDedup({
+          text: m.text,
+          title: app,
+          url: '',
+          createdAt,
+          folderId: activeFolderId || null,
+          source: 'native'
+        });
+        console.log(`Native: clip ${i + 1} save result:`, result);
+      }
+      
+      if (receivedMsgs.length > 0) {
+        console.log(`Native: ✓ saved ${receivedMsgs.length} clips to storage`);
+      } else {
+        console.log('Native: no clips received from host');
+      }
     });
+    
     // Ask host to drain queued items and exit
+    console.log('Native: sending drain message to host');
     port.postMessage({ type: 'drain' });
-  } catch (_) {
+  } catch (e) {
+    console.error('Native messaging error:', e);
     // host may not be installed; ignore quietly
   }
 }
@@ -249,61 +287,73 @@ chrome.action?.onClicked.addListener(async () => {
 });
 
 async function handleSaveSelection(tabId, tabMeta) {
-  // 1) Capture selection (text + rects) across all frames
-  const results = await chrome.scripting.executeScript({
-    target: { tabId, allFrames: true },
-    world: 'MAIN',
-    func: () => {
-      const sel = window.getSelection();
-      const text = sel ? sel.toString() : '';
-      let rects = [];
-      try {
-        if (sel && sel.rangeCount > 0) {
-          const range = sel.getRangeAt(0);
-          const clientRects = range.getClientRects();
-          rects = Array.from(clientRects).map(r => ({
-            x: Math.round(r.left + window.scrollX),
-            y: Math.round(r.top + window.scrollY),
-            width: Math.round(r.width),
-            height: Math.round(r.height)
-          }));
-        }
-      } catch (_) {}
-      return { text, rects };
+  try {
+    // Skip restricted pages (chrome://, chrome-extension://, etc.)
+    const url = tabMeta?.url || '';
+    if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('edge://') || url.startsWith('about:')) {
+      console.log('Cannot save selection from restricted page:', url);
+      return;
     }
-  });
 
-  const frames = (results || []).map(r => ({ frameId: r.frameId, ...(r.result || { text: '', rects: [] }) }));
-  const best = frames.reduce((acc, cur) => {
-    const len = (cur.text || '').trim().length;
-    const accLen = (acc?.text || '').trim().length;
-    return len > accLen ? cur : acc;
-  }, null);
+    // 1) Capture selection (text + rects) across all frames
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: 'MAIN',
+      func: () => {
+        const sel = window.getSelection();
+        const text = sel ? sel.toString() : '';
+        let rects = [];
+        try {
+          if (sel && sel.rangeCount > 0) {
+            const range = sel.getRangeAt(0);
+            const clientRects = range.getClientRects();
+            rects = Array.from(clientRects).map(r => ({
+              x: Math.round(r.left + window.scrollX),
+              y: Math.round(r.top + window.scrollY),
+              width: Math.round(r.width),
+              height: Math.round(r.height)
+            }));
+          }
+        } catch (_) {}
+        return { text, rects };
+      }
+    });
 
-  const text = (best?.text || '').trim();
-  const targetFrameId = typeof best?.frameId === 'number' ? best.frameId : 0;
-  if (!text) {
-    // Show unobtrusive toast that no selection was found (in top frame)
-    await injectToast(tabId, targetFrameId, 'No text selected');
-    return;
+    const frames = (results || []).map(r => ({ frameId: r.frameId, ...(r.result || { text: '', rects: [] }) }));
+    const best = frames.reduce((acc, cur) => {
+      const len = (cur.text || '').trim().length;
+      const accLen = (acc?.text || '').trim().length;
+      return len > accLen ? cur : acc;
+    }, null);
+
+    const text = (best?.text || '').trim();
+    const targetFrameId = typeof best?.frameId === 'number' ? best.frameId : 0;
+    if (!text) {
+      // Show unobtrusive toast that no selection was found (in top frame)
+      await injectToast(tabId, targetFrameId, 'No text selected');
+      return;
+    }
+
+    // 2) Save to storage with dedup (prefer tab metadata for title/url) and attach active folder if set
+    const { activeFolderId = null } = await chrome.storage.local.get({ activeFolderId: null });
+    await saveClipWithDedup({
+      text,
+      title: tabMeta?.title || '',
+      url: tabMeta?.url || '',
+      createdAt: Date.now(),
+      folderId: activeFolderId || null,
+      source: 'web'
+    });
+
+    // 3) Visual feedback: highlight selection + toast in the correct frame
+    if (Array.isArray(best?.rects) && best.rects.length > 0) {
+      await injectFlash(tabId, targetFrameId, best.rects);
+    }
+    await injectToast(tabId, targetFrameId, 'Saved');
+  } catch (e) {
+    // Silently ignore errors on restricted pages or inaccessible tabs
+    console.warn('handleSaveSelection error:', e.message);
   }
-
-  // 2) Save to storage with dedup (prefer tab metadata for title/url) and attach active folder if set
-  const { activeFolderId = null } = await chrome.storage.local.get({ activeFolderId: null });
-  await saveClipWithDedup({
-    text,
-    title: tabMeta?.title || '',
-    url: tabMeta?.url || '',
-    createdAt: Date.now(),
-    folderId: activeFolderId || null,
-    source: 'web'
-  });
-
-  // 3) Visual feedback: highlight selection + toast in the correct frame
-  if (Array.isArray(best?.rects) && best.rects.length > 0) {
-    await injectFlash(tabId, targetFrameId, best.rects);
-  }
-  await injectToast(tabId, targetFrameId, 'Saved');
 }
 
 async function injectFlash(tabId, frameId, rects) {

@@ -290,6 +290,14 @@
           <option value="numbers">1. Numbered</option>
           <option value="lines">Plain lines</option>
         </select>
+        <select id="export-format" title="Export format">
+          <option value="json">JSON</option>
+          <option value="csv">CSV</option>
+          <option value="markdown">Markdown</option>
+        </select>
+        <button id="export-btn" class="btn-ghost icon-btn" title="Export clips">↓</button>
+        <button id="import-btn" class="btn-ghost icon-btn" title="Import clips">↑</button>
+        <input id="import-file" type="file" accept=".json" style="display:none;" />
       </div>
       <div class="body">
         <div id="empty" class="empty" hidden>No clips yet. Select text and press your shortcut or use the right-click menu.</div>
@@ -314,6 +322,10 @@
   const delFolderBtn = shadow.getElementById('folder-del');
   const formatSel = shadow.getElementById('format');
   const tagFilterSel = shadow.getElementById('tag-filter');
+  const exportFormatSel = shadow.getElementById('export-format');
+  const exportBtn = shadow.getElementById('export-btn');
+  const importBtn = shadow.getElementById('import-btn');
+  const importFileInput = shadow.getElementById('import-file');
   const resizeHandle = shadow.getElementById('resize-handle');
   const wrapEl = shadow.querySelector('.wrap');
   // Make overlay container focusable so it can receive key events
@@ -843,6 +855,143 @@
     } catch(e){ console.error('Clear failed', e); showToast('Clear failed'); }
   });
   closeBtn.addEventListener('click', ()=> host.remove());
+
+  // Export/Import functionality
+  function downloadFile(filename, content, mimeType = 'text/plain') {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportAsJSON(clips) {
+    const data = JSON.stringify(clips, null, 2);
+    const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+    downloadFile(`gigi-clips-${timestamp}.json`, data, 'application/json');
+  }
+
+  function exportAsCSV(clips) {
+    const headers = ['Text', 'Title', 'URL', 'Tags', 'Created', 'Duplicates', 'Source'];
+    const rows = clips.map(c => [
+      (c.text || '').replace(/"/g, '""'),
+      (c.title || '').replace(/"/g, '""'),
+      (c.url || '').replace(/"/g, '""'),
+      (Array.isArray(c.tags) ? c.tags.join(', ') : '').replace(/"/g, '""'),
+      c.createdAt ? new Date(c.createdAt).toISOString() : '',
+      c.dupCount || 1,
+      c.source || 'web'
+    ]);
+    const csvLines = [
+      headers.map(h => `"${h}"`).join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ];
+    const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+    downloadFile(`gigi-clips-${timestamp}.csv`, csvLines.join('\n'), 'text/csv');
+  }
+
+  function exportAsMarkdown(clips) {
+    const lines = ['# Gigi\'s Copy Tool - Exported Clips', '', `**Exported:** ${new Date().toLocaleString()}`, `**Total Clips:** ${clips.length}`, ''];
+    clips.forEach((c, i) => {
+      lines.push(`## ${i + 1}. ${c.title || 'Untitled'}`);
+      if (c.url) lines.push(`**URL:** ${c.url}`);
+      if (Array.isArray(c.tags) && c.tags.length) lines.push(`**Tags:** ${c.tags.join(', ')}`);
+      if (c.dupCount && c.dupCount > 1) lines.push(`**Duplicates:** ×${c.dupCount}`);
+      lines.push(`**Created:** ${c.createdAt ? new Date(c.createdAt).toLocaleString() : 'Unknown'}`);
+      lines.push('');
+      lines.push('```');
+      lines.push(c.text || '');
+      lines.push('```');
+      lines.push('');
+    });
+    const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+    downloadFile(`gigi-clips-${timestamp}.md`, lines.join('\n'), 'text/markdown');
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      try {
+        const { clips = [] } = await chrome.storage.local.get({ clips: [] });
+        const sorted = [...clips].sort((a, b) => {
+          const sa = a.starred ? 1 : 0; const sb = b.starred ? 1 : 0;
+          if (sa !== sb) return sb - sa;
+          return (b.createdAt || 0) - (a.createdAt || 0);
+        });
+        const inFolder = activeFolderId ? sorted.filter(c => c.folderId === activeFolderId) : sorted;
+        const filtered = applyFilter(inFolder);
+        const tagFiltered = applyTagFilter(filtered);
+        
+        if (tagFiltered.length === 0) {
+          showToast('No clips to export');
+          return;
+        }
+
+        const format = exportFormatSel ? exportFormatSel.value : 'json';
+        if (format === 'csv') exportAsCSV(tagFiltered);
+        else if (format === 'markdown') exportAsMarkdown(tagFiltered);
+        else exportAsJSON(tagFiltered);
+        
+        showToast(`Exported ${tagFiltered.length} clips as ${format.toUpperCase()}`);
+      } catch (e) {
+        console.error('Export failed', e);
+        showToast('Export failed');
+      }
+    });
+  }
+
+  if (importBtn && importFileInput) {
+    importBtn.addEventListener('click', () => {
+      importFileInput.click();
+    });
+
+    importFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const imported = JSON.parse(text);
+
+        if (!Array.isArray(imported)) {
+          showToast('Invalid file: expected JSON array');
+          importFileInput.value = '';
+          return;
+        }
+
+        // Validate schema
+        const valid = imported.every(c => c && typeof c === 'object' && typeof c.text === 'string');
+        if (!valid) {
+          showToast('Invalid clip format');
+          importFileInput.value = '';
+          return;
+        }
+
+        const action = confirm(
+          `Import ${imported.length} clips?\n\n` +
+          `OK = Merge with existing clips\n` +
+          `Cancel = Abort import`
+        );
+
+        if (!action) {
+          importFileInput.value = '';
+          return;
+        }
+
+        const { clips: existing = [] } = await chrome.storage.local.get({ clips: [] });
+        const merged = [...existing, ...imported];
+        await chrome.storage.local.set({ clips: merged });
+        showToast(`Imported ${imported.length} clips`);
+        loadAndRender();
+      } catch (e) {
+        console.error('Import failed', e);
+        showToast('Import failed: ' + e.message);
+      } finally {
+        importFileInput.value = '';
+      }
+    });
+  }
 
   // Search filtering
   if (searchInput) {
