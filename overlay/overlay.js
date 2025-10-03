@@ -245,6 +245,47 @@
         word-break: break-all; 
       }
       .meta a:hover { text-decoration: underline; }
+      .info-bar { 
+        display: flex; 
+        align-items: center; 
+        gap: 8px; 
+        flex-wrap: wrap;
+        margin-top: 8px;
+        font-size: 11px;
+        color: rgba(3, 3, 2, 0.6);
+      }
+      .info-bar .meta { 
+        margin-top: 0;
+        color: rgba(3, 3, 2, 0.6);
+      }
+      .dup-count, .word-count { 
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px;
+        border-radius: 9999px;
+        border: 1px solid rgba(3, 3, 2, 0.1);
+        background: white;
+        color: rgba(3, 3, 2, 0.7);
+        font-size: 10.5px;
+        font-weight: 500;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+      .dup-count {
+        background: rgba(255, 69, 0, 0.12);
+        border-color: rgba(255, 69, 0, 0.25);
+        color: #b91c1c;
+      }
+      .word-count {
+        background: rgba(30, 64, 175, 0.08);
+        border-color: rgba(30, 64, 175, 0.18);
+        color: #1e3a8a;
+      }
+      .word-count-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
       .tags { 
         display: flex; 
         gap: 6px; 
@@ -1195,28 +1236,36 @@
       li.addEventListener('mousedown', (e)=>{ if (!e.target.closest('button, input, textarea, select, a')) setSelectedById(clip.id, { scroll: false }); });
       const left = document.createElement('div'); left.className = 'left';
       const textDiv = document.createElement('div'); textDiv.className='text'; textDiv.textContent = clip.text || ''; left.appendChild(textDiv);
-      const meta = document.createElement('div'); meta.className='meta';
+      const infoBar = document.createElement('div'); infoBar.className = 'info-bar';
       const title = (clip.title||'').trim(); const url = (clip.url||'').trim();
       if (title || url) {
-        meta.textContent = '';
-        if (title) meta.append(document.createTextNode(title + (url ? ' • ' : '')));
+        const meta = document.createElement('span'); meta.className='meta';
+        if (title) meta.append(document.createTextNode(title));
+        if (title && url) meta.append(document.createTextNode(' • '));
         if (url) { const a = document.createElement('a'); a.href=url; a.textContent = fmtUrl(url); a.target='_blank'; a.rel='noreferrer noopener'; meta.append(a); }
-        left.appendChild(meta);
+        infoBar.append(meta);
       }
-      // Show duplicate count if > 1 (defaults to 1 when missing)
       const dupCountVal = Number(clip.dupCount || 1);
       if (dupCountVal > 1) {
-        if (!(title || url)) { meta.textContent = ''; left.appendChild(meta); }
-        if (meta.childNodes.length > 0) meta.append(document.createTextNode(' • '));
-        const dcSpan = document.createElement('span');
-        dcSpan.textContent = `×${dupCountVal}`;
-        meta.append(dcSpan);
+        const dupBadge = document.createElement('span');
+        dupBadge.className = 'dup-count';
+        dupBadge.textContent = `×${dupCountVal}`;
+        dupBadge.title = `${dupCountVal} copies`;
+        infoBar.append(dupBadge);
       }
+      const wordCount = ((clip.text || '').match(/\S+/g) || []).length;
+      const wcBadge = document.createElement('span'); wcBadge.className = 'word-count'; wcBadge.title = 'Word count';
+      const wcIcon = document.createElement('span'); wcIcon.className = 'word-count-icon'; wcIcon.textContent = '📝';
+      const wcLabel = document.createElement('span'); wcLabel.textContent = `${wordCount} ${wordCount === 1 ? 'word' : 'words'}`;
+      wcBadge.append(wcIcon, wcLabel);
+      infoBar.append(wcBadge);
+      if (infoBar.childNodes.length) left.appendChild(infoBar);
       // Tag chips
       if (Array.isArray(clip.tags) && clip.tags.length) {
         const tagsDiv = document.createElement('div'); tagsDiv.className='tags';
         for (const tg of clip.tags) {
-          const chip = document.createElement('span'); chip.className='tag'; chip.textContent=String(tg);
+          const chip = document.createElement('span');
+          chip.className='tag'; chip.textContent=String(tg);
           tagsDiv.appendChild(chip);
         }
         left.appendChild(tagsDiv);
