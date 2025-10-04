@@ -1,6 +1,13 @@
 // Gigi's Copy Tool Background Service Worker (MV3)
 // Handles commands, context menu, selection capture, storage, and overlay UI
 
+import {
+  getClips,
+  setClips,
+  getTagRules,
+  getActiveFolderId
+} from './storage.js';
+
 const MENU_ID = 'quickmulticlip_save_selection';
 const NATIVE_HOST = 'com.gigi.copytool';
 
@@ -64,7 +71,7 @@ async function saveClipWithDedup(partial) {
     // Evaluate tag rules for this clip
     const tagsToAdd = await evaluateTags(text || '', url || '');
 
-    const { clips = [] } = await chrome.storage.local.get({ clips: [] });
+    const clips = await getClips();
 
     let idx = clips.findIndex(c => {
       if (!c) return false;
@@ -85,7 +92,7 @@ async function saveClipWithDedup(partial) {
       const clip = { id, text, title, url, createdAt, folderId, starred: false, dupCount: 1, hash, source, tags: tagsToAdd };
       clips.push(clip);
     }
-    await chrome.storage.local.set({ clips });
+    await setClips(clips);
     return true;
   } catch (e) {
     console.warn('saveClipWithDedup error', e);
@@ -130,7 +137,7 @@ function evaluateTagsWithRules(tagRules, text, url) {
 
 async function evaluateTags(text, url) {
   try {
-    const { tagRules = [] } = await chrome.storage.local.get({ tagRules: [] });
+    const tagRules = await getTagRules();
     return evaluateTagsWithRules(tagRules, text, url);
   } catch (e) {
     console.warn('evaluateTags error', e);
@@ -140,10 +147,7 @@ async function evaluateTags(text, url) {
 
 async function recomputeAllTags() {
   try {
-    const [{ clips = [] }, { tagRules = [] }] = await Promise.all([
-      chrome.storage.local.get({ clips: [] }),
-      chrome.storage.local.get({ tagRules: [] })
-    ]);
+    const [clips, tagRules] = await Promise.all([getClips(), getTagRules()]);
     let changed = false;
     const next = clips.map(c => {
       if (!c || typeof c !== 'object') return c;
@@ -156,7 +160,7 @@ async function recomputeAllTags() {
       if (!eq) { changed = true; return { ...c, tags: a }; }
       return c;
     });
-    if (changed) await chrome.storage.local.set({ clips: next });
+    if (changed) await setClips(next);
   } catch (e) {
     console.warn('recomputeAllTags error', e);
   }
@@ -205,7 +209,7 @@ async function drainDesktopQueue() {
       
       // Process all received messages after disconnect
       console.log(`Native: processing ${receivedMsgs.length} clips from queue`);
-      const { activeFolderId = null } = await chrome.storage.local.get({ activeFolderId: null });
+      const activeFolderId = await getActiveFolderId();
       console.log('Native: active folder:', activeFolderId);
       
       for (let i = 0; i < receivedMsgs.length; i++) {

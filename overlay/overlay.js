@@ -1,6 +1,6 @@
 // Gigi's Copy Tool In-Page Overlay (toggle)
 // Injected via chrome.scripting.executeScript to show/hide a draggable overlay inside the page.
-(() => {
+;(async () => {
   const HOST_ID = 'qmc-overlay-host';
   const SHADOW_ID = 'qmc-overlay-shadow-root';
 
@@ -25,15 +25,37 @@
   host.style.resize = 'both';
   host.style.borderRadius = '24px';
 
+  const storage = await import(chrome.runtime.getURL('storage.js'));
+  const {
+    getOverlayPosition,
+    setOverlayPosition,
+    getOverlayTheme,
+    setOverlayTheme,
+    getOverlayReduceMotion,
+    setOverlayReduceMotion,
+    getTagRules,
+    setTagRules,
+    getClips,
+    setClips,
+    getFolders,
+    setFolders,
+    getActiveFolderId,
+    setActiveFolderId,
+    getCopyFormat,
+    setCopyFormat,
+    getOverlaySize,
+    setOverlaySize,
+    setClipsAndFolders
+  } = storage;
+
   // Restore position if saved
   try {
-    chrome.storage.local.get('overlayPos', ({ overlayPos }) => {
-      if (overlayPos && typeof overlayPos.left === 'number' && typeof overlayPos.top === 'number') {
-        host.style.left = overlayPos.left + 'px';
-        host.style.top = overlayPos.top + 'px';
-        host.style.right = 'auto';
-      }
-    });
+    const overlayPos = await getOverlayPosition();
+    if (overlayPos) {
+      host.style.left = overlayPos.left + 'px';
+      host.style.top = overlayPos.top + 'px';
+      host.style.right = 'auto';
+    }
   } catch (_) {}
 
   const shadow = host.attachShadow({ mode: 'open' });
@@ -842,12 +864,11 @@
     else wrapEl.setAttribute('data-theme', currentTheme);
   }
   try {
-    chrome.storage.local.get({ overlayTheme: 'auto' }, ({ overlayTheme }) => {
-      applyTheme(overlayTheme);
-    });
+    const overlayTheme = await getOverlayTheme();
+    applyTheme(overlayTheme);
   } catch(_) {}
-  function saveTheme(theme) {
-    try { chrome.storage.local.set({ overlayTheme: theme }); } catch(_){ }
+  async function saveTheme(theme) {
+    try { await setOverlayTheme(theme); } catch(_){ }
     applyTheme(theme);
   }
 
@@ -861,17 +882,16 @@
     else wrapEl.removeAttribute('data-reduce-motion');
   }
   try {
-    chrome.storage.local.get('overlayReduceMotion', ({ overlayReduceMotion }) => {
-      if (typeof overlayReduceMotion === 'boolean') {
-        hasUserReduceMotionPref = true;
-        applyReduceMotion(overlayReduceMotion);
-      } else {
-        const prefers = (typeof window !== 'undefined' && window.matchMedia)
-          ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-          : false;
-        applyReduceMotion(prefers);
-      }
-    });
+    const overlayReduceMotion = await getOverlayReduceMotion();
+    if (typeof overlayReduceMotion === 'boolean') {
+      hasUserReduceMotionPref = true;
+      applyReduceMotion(overlayReduceMotion);
+    } else {
+      const prefers = (typeof window !== 'undefined' && window.matchMedia)
+        ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        : false;
+      applyReduceMotion(prefers);
+    }
   } catch(_) {}
   // React to OS-level reduced motion preference when the user hasn't set an explicit preference
   try {
@@ -882,9 +902,9 @@
       else if (mq.addListener) mq.addListener(onChange);
     }
   } catch(_) {}
-  function saveReduceMotion(enabled) {
+  async function saveReduceMotion(enabled) {
     hasUserReduceMotionPref = true;
-    try { chrome.storage.local.set({ overlayReduceMotion: !!enabled }); } catch(_){ }
+    try { await setOverlayReduceMotion(!!enabled); } catch(_){ }
     applyReduceMotion(enabled);
   }
 
@@ -1013,7 +1033,7 @@
     // Tag rules: load, render, add/remove
     async function loadRules(){
       try {
-        const { tagRules=[] } = await chrome.storage.local.get({ tagRules: [] });
+        const tagRules = await getTagRules();
         const listEl = settingsPopoverEl.querySelector('#rules-list');
         listEl.textContent = '';
         if (!Array.isArray(tagRules) || tagRules.length === 0) {
@@ -1036,9 +1056,9 @@
           del.textContent = 'Delete';
           del.addEventListener('click', async ()=>{
             try {
-              const { tagRules: cur=[] } = await chrome.storage.local.get({ tagRules: [] });
+              const cur = await getTagRules();
               const next = cur.filter((_, i)=> i !== idx);
-              await chrome.storage.local.set({ tagRules: next });
+              await setTagRules(next);
               showToast('Rule deleted');
               await loadRules();
             } catch(_) {}
@@ -1058,9 +1078,9 @@
         const pattern = (patternInp?.value || '').trim();
         const tags = (tagsInp?.value || '').split(',').map(s=>s.trim()).filter(Boolean);
         if (!pattern || tags.length === 0) { showToast('Enter pattern and tags'); return; }
-        const { tagRules: cur=[] } = await chrome.storage.local.get({ tagRules: [] });
+        const cur = await getTagRules();
         const next = [...cur, { type, pattern, tags }];
-        await chrome.storage.local.set({ tagRules: next });
+        await setTagRules(next);
         showToast('Rule added');
         if (patternInp) patternInp.value = '';
         if (tagsInp) tagsInp.value = '';
@@ -1109,9 +1129,9 @@
     }
     folderSel.value = activeFolderId || '';
   }
-  function setActiveFolder(id){
+  async function setActiveFolder(id){
     activeFolderId = id || null;
-    try { chrome.storage.local.set({ activeFolderId }); } catch(_){ }
+    try { await setActiveFolderId(activeFolderId); } catch(_){ }
     loadAndRender();
     showToast(activeFolderId ? `Folder: ${getFolderNameById(activeFolderId)}` : 'All clips');
   }
@@ -1194,20 +1214,20 @@
     try {
       const li = findLiById(id);
       if (li && li.querySelector('textarea.edit-input')) { showToast('Finish editing before deleting'); return; }
-      const { clips=[] } = await chrome.storage.local.get({ clips: [] });
+      const clips = await getClips();
       const target = clips.find(c=>c.id===id);
       const next = clips.filter(c=>c.id!==id);
       if (!target) return;
       lastDeletedClip = target;
-      await chrome.storage.local.set({ clips: next });
+      await setClips(next);
       showToast('Deleted', {
         label: 'Undo',
         onClick: async ()=>{
           try {
-            const { clips: cur=[] } = await chrome.storage.local.get({ clips: [] });
+            const cur = await getClips();
             const exists = cur.some(c=>c.id===lastDeletedClip.id);
             const restored = exists ? cur : [...cur, lastDeletedClip];
-            await chrome.storage.local.set({ clips: restored });
+            await setClips(restored);
             showToast('Restored');
           } catch (e) { console.error('Undo failed', e); showToast('Undo failed'); }
         }
@@ -1277,9 +1297,9 @@
       starBtn.title = clip.starred ? 'Unpin' : 'Pin';
       starBtn.addEventListener('click', async ()=>{
         try {
-          const { clips=[] } = await chrome.storage.local.get({ clips: [] });
+          const clips = await getClips();
           const next = clips.map(c => c.id===clip.id ? { ...c, starred: !c.starred } : c);
-          await chrome.storage.local.set({ clips: next });
+          await setClips(next);
         } catch(e){ console.error('Star failed', e); showToast('Star failed'); }
       });
       // Expand/Collapse toggle
@@ -1327,9 +1347,9 @@
           // Save
           try {
             const newText = textarea ? textarea.value : (clip.text||'');
-            const { clips=[] } = await chrome.storage.local.get({ clips: [] });
+            const clips = await getClips();
             const next = clips.map(c => c.id===clip.id ? { ...c, text: newText } : c);
-            await chrome.storage.local.set({ clips: next });
+            await setClips(next);
             textDiv.textContent = newText;
             showToast('Saved');
             exitEdit(true);
@@ -1348,19 +1368,19 @@
       const delBtn = document.createElement('button'); delBtn.className='icon-btn btn-danger'; delBtn.textContent='🗑'; delBtn.title = 'Delete';
       delBtn.addEventListener('click', async ()=>{
         try {
-          const { clips=[] } = await chrome.storage.local.get({ clips: [] });
+          const clips = await getClips();
           const target = clips.find(c=>c.id===clip.id) || clip;
           const next = clips.filter(c=>c.id!==clip.id);
           lastDeletedClip = target;
-          await chrome.storage.local.set({ clips: next });
+          await setClips(next);
           showToast('Deleted', {
             label: 'Undo',
             onClick: async ()=>{
               try {
-                const { clips: cur=[] } = await chrome.storage.local.get({ clips: [] });
+                const cur = await getClips();
                 const exists = cur.some(c=>c.id===lastDeletedClip.id);
                 const restored = exists ? cur : [...cur, lastDeletedClip];
-                await chrome.storage.local.set({ clips: restored });
+                await setClips(restored);
                 showToast('Restored');
               } catch (e) { console.error('Undo failed', e); showToast('Undo failed'); }
             }
@@ -1372,7 +1392,7 @@
     }
   }
   async function loadAndRender(){
-    const { clips=[] } = await chrome.storage.local.get({ clips: [] });
+    const clips = await getClips();
     // Light migration: ensure dupCount defaults to 1 for legacy items
     let migrated = false;
     const next = clips.map(c => {
@@ -1387,7 +1407,7 @@
     allTags = uniqueTagsFromClips(next);
     fillTagFilterSelect();
     if (migrated) {
-      try { await chrome.storage.local.set({ clips: next }); } catch(_) {}
+      try { await setClips(next); } catch(_) {}
       render(next);
     } else {
       render(clips);
@@ -1402,7 +1422,7 @@
 
   copyAllBtn.addEventListener('click', async ()=>{
     try {
-      const { clips=[] } = await chrome.storage.local.get({ clips: [] });
+      const clips = await getClips();
       const sorted=[...clips].sort((a,b)=>{
         const sa = a.starred ? 1 : 0; const sb = b.starred ? 1 : 0; if (sa!==sb) return sb-sa; return (b.createdAt||0)-(a.createdAt||0);
       });
@@ -1416,13 +1436,13 @@
   clearAllBtn.addEventListener('click', async ()=>{
     if(!confirm('Clear all clips?')) return;
     try {
-      const { clips=[] } = await chrome.storage.local.get({ clips: [] });
+      const clips = await getClips();
       lastClearedSnapshot = clips;
-      await chrome.storage.local.set({ clips: [] });
+      await setClips([]);
       showToast('Cleared', {
         label: 'Undo',
         onClick: async ()=>{
-          try { await chrome.storage.local.set({ clips: lastClearedSnapshot || [] }); showToast('Restored'); }
+          try { await setClips(lastClearedSnapshot || []); showToast('Restored'); }
           catch(e){ console.error('Undo clear failed', e); showToast('Undo failed'); }
         }
       });
@@ -1487,7 +1507,7 @@
   if (exportBtn) {
     exportBtn.addEventListener('click', async () => {
       try {
-        const { clips = [] } = await chrome.storage.local.get({ clips: [] });
+        const clips = await getClips();
         const sorted = [...clips].sort((a, b) => {
           const sa = a.starred ? 1 : 0; const sb = b.starred ? 1 : 0;
           if (sa !== sb) return sb - sa;
@@ -1553,9 +1573,9 @@
           return;
         }
 
-        const { clips: existing = [] } = await chrome.storage.local.get({ clips: [] });
+        const existing = await getClips();
         const merged = [...existing, ...imported];
-        await chrome.storage.local.set({ clips: merged });
+        await setClips(merged);
         showToast(`Imported ${imported.length} clips`);
         loadAndRender();
       } catch (e) {
@@ -1589,11 +1609,10 @@
 
   // Folders: initialize and event handlers
   try {
-    chrome.storage.local.get({ folders: [], activeFolderId: null }, ({ folders: fs, activeFolderId: af }) => {
-      folders = Array.isArray(fs) ? fs : [];
-      activeFolderId = af || null;
-      fillFolderSelect();
-    });
+    const [fs, af] = await Promise.all([getFolders(), getActiveFolderId()]);
+    folders = Array.isArray(fs) ? fs : [];
+    activeFolderId = af || null;
+    fillFolderSelect();
   } catch(_) {}
   if (folderSel) {
     folderSel.addEventListener('change', ()=>{ setActiveFolder(folderSel.value || null); });
@@ -1604,9 +1623,13 @@
       if (!name) return;
       const f = { id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name, createdAt: Date.now() };
       try {
-        const { folders: cur=[] } = await chrome.storage.local.get({ folders: [] });
+        const cur = await getFolders();
         const next = [...cur, f];
-        await chrome.storage.local.set({ folders: next, activeFolderId: f.id });
+        await setClipsAndFolders({ folders: next, activeFolderId: f.id });
+        folders = next;
+        activeFolderId = f.id;
+        fillFolderSelect();
+        loadAndRender();
         showToast('Folder created');
       } catch(e){ console.error('Add folder failed', e); showToast('Add folder failed'); }
     });
@@ -1616,13 +1639,14 @@
       if (!activeFolderId) { showToast('Select a folder'); return; }
       if (!confirm('Delete this folder? Clips will be kept in All.')) return;
       try {
-        const [{ folders: cur=[] }, { clips=[] }] = await Promise.all([
-          chrome.storage.local.get({ folders: [] }),
-          chrome.storage.local.get({ clips: [] })
-        ]);
-        const nextFolders = cur.filter(f => f.id !== activeFolderId);
+        const [curFolders, clips] = await Promise.all([getFolders(), getClips()]);
+        const nextFolders = curFolders.filter(f => f.id !== activeFolderId);
         const nextClips = clips.map(c => c.folderId === activeFolderId ? ({ ...c, folderId: null }) : c);
-        await chrome.storage.local.set({ folders: nextFolders, clips: nextClips, activeFolderId: null });
+        await setClipsAndFolders({ folders: nextFolders, clips: nextClips, activeFolderId: null });
+        folders = nextFolders;
+        activeFolderId = null;
+        fillFolderSelect();
+        loadAndRender();
         showToast('Folder deleted');
       } catch(e){ console.error('Delete folder failed', e); showToast('Delete folder failed'); }
     });
@@ -1682,64 +1706,81 @@
 
   // Load and persist copy format
   try {
-    chrome.storage.local.get({ copyFormat: 'bullets' }, ({ copyFormat: storedFmt }) => {
-      copyFormat = storedFmt || 'bullets';
-      if (formatSel) formatSel.value = copyFormat;
-    });
+    copyFormat = await getCopyFormat();
+    if (formatSel) formatSel.value = copyFormat;
   } catch(_) {}
-  // Persist copy format on change
   if (formatSel) {
-    formatSel.addEventListener('change', ()=>{
+    formatSel.addEventListener('change', async ()=>{
       copyFormat = formatSel.value || 'bullets';
-      try { chrome.storage.local.set({ copyFormat }); } catch(_){ }
+      try { await setCopyFormat(copyFormat); } catch(_){ }
     });
   }
   if (resizeHandle) {
     resizeHandle.addEventListener('mousedown', (e)=>{
-      resizing = true; startRX = e.clientX; startRY = e.clientY;
+      resizing = true;
+      startX = e.clientX; startY = e.clientY;
       const rect = host.getBoundingClientRect(); startW = rect.width; startH = rect.height;
       e.preventDefault(); e.stopPropagation();
     });
   }
   window.addEventListener('mousemove', (e)=>{
     if(!resizing) return;
-    const dx = e.clientX - startRX; const dy = e.clientY - startRY;
+    const dx = e.clientX - startX; const dy = e.clientY - startY;
     const maxW = Math.round(window.innerWidth * 0.95);
     const maxH = Math.round(window.innerHeight * 0.9);
     const newW = clamp(startW + dx, 300, maxW);
     const newH = clamp(startH + dy, 220, maxH);
-    host.style.width = newW + 'px'; host.style.height = newH + 'px';
+    host.style.width = newW + 'px';
+    host.style.height = newH + 'px';
   });
   window.addEventListener('mouseup', async ()=>{
     if(!resizing) return; resizing=false;
     try {
       const rect = host.getBoundingClientRect();
-      await chrome.storage.local.set({ overlaySize: { width: Math.round(rect.width), height: Math.round(rect.height) } });
-    } catch(_){}
+      await setOverlaySize({ width: Math.round(rect.width), height: Math.round(rect.height) });
+    } catch(_){ }
   });
 
   // Restore saved size
   try {
-    chrome.storage.local.get('overlaySize', ({ overlaySize }) => {
-      if (overlaySize && typeof overlaySize.width==='number' && typeof overlaySize.height==='number') {
-        host.style.width = overlaySize.width + 'px';
-        host.style.height = overlaySize.height + 'px';
-      } else {
-        host.style.height = '520px';
-      }
-    });
-  } catch(_){}
+    const overlaySize = await getOverlaySize();
+    if (overlaySize && typeof overlaySize.width === 'number' && typeof overlaySize.height === 'number') {
+      host.style.width = overlaySize.width + 'px';
+      host.style.height = overlaySize.height + 'px';
+    }
+  } catch(_){ }
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if ('overlayTheme' in changes) { const val = changes.overlayTheme.newValue; if (val) applyTheme(val); }
     if ('overlayReduceMotion' in changes) { applyReduceMotion(!!changes.overlayReduceMotion.newValue); }
     if ('folders' in changes) { folders = changes.folders.newValue || []; fillFolderSelect(); }
-    if ('activeFolderId' in changes) { activeFolderId = changes.activeFolderId.newValue || null; if (folderSel) folderSel.value = activeFolderId || ''; loadAndRender(); }
+    if ('activeFolderId' in changes) {
+      activeFolderId = changes.activeFolderId.newValue || null;
+      if (folderSel) folderSel.value = activeFolderId || '';
+      loadAndRender();
+    }
     if ('clips' in changes) { loadAndRender(); }
-    if ('tagRules' in changes) { /* rules impact saving; UI lists them in settings only */ }
+    if ('copyFormat' in changes) {
+      copyFormat = changes.copyFormat.newValue || 'bullets';
+      if (formatSel) formatSel.value = copyFormat;
+    }
+    if ('overlaySize' in changes) {
+      const size = changes.overlaySize.newValue;
+      if (size && typeof size.width === 'number' && typeof size.height === 'number') {
+        host.style.width = size.width + 'px';
+        host.style.height = size.height + 'px';
+      }
+    }
+    if ('overlayPos' in changes) {
+      const pos = changes.overlayPos.newValue;
+      if (pos && typeof pos.left === 'number' && typeof pos.top === 'number') {
+        host.style.left = pos.left + 'px';
+        host.style.top = pos.top + 'px';
+        host.style.right = 'auto';
+      }
+    }
   });
-
   // Dragging
   let dragging=false; let startX=0, startY=0; let startLeft=0, startTop=0;
   dragHandle.addEventListener('mousedown', (e)=>{
@@ -1760,10 +1801,10 @@
     if(!dragging) return; dragging=false;
     try {
       const rect = host.getBoundingClientRect();
-      await chrome.storage.local.set({ overlayPos: { left: Math.round(rect.left), top: Math.round(rect.top) } });
-    } catch(_){}
+      await setOverlayPosition({ left: Math.round(rect.left), top: Math.round(rect.top) });
+    } catch(_){ }
   });
 
   document.documentElement.appendChild(host);
-  loadAndRender();
+  await loadAndRender();
 })();
