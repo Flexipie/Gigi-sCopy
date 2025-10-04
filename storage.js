@@ -49,6 +49,16 @@ async function storageSet(items) {
 }
 
 /**
+ * Ensure returned arrays are shallow-copied and fallback to defaults when missing.
+ * @param {*} value Value retrieved from storage.
+ * @param {Array} fallback Default array if value is not an array.
+ * @returns {Array}
+ */
+function ensureArray(value, fallback = []) {
+  return Array.isArray(value) ? value.slice() : fallback.slice();
+}
+
+/**
  * Retrieve all stored clips.
  * @returns {Promise<Array>} array of clip objects.
  */
