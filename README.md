@@ -22,6 +22,7 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
   - Tag chips per clip
   - Tag filter dropdown in the toolbar
   - Settings: Theme (Auto/Light/Dark), Reduce Motion, and Tag Rules editor (add/remove rules)
+- Centralized storage helpers (`storage.js`) wrap `chrome.storage.local` for clips, folders, tag rules, overlay preferences, and layout state.
 - Works inside iframes
 
 - Smart Deduplication on save
@@ -88,5 +89,23 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
 - Manifest: `manifest.json`
 - Background service worker: `background.js`
 - In-page overlay UI: `overlay/overlay.js`
+- Storage helpers: `storage.js`
 
 No build step required. Reload the extension after changes.
+
+### Architecture notes
+
+- **Persistence layer**: `storage.js` exports async helpers (`getClips()`, `setClips()`, `getFolders()`, `getOverlaySettings()`, etc.) used by both the background service worker and overlay UI. This keeps all reads/writes consistent and simplifies future migrations.
+- **Overlay importing**: `overlay/overlay.js` dynamically imports the storage helpers via `chrome.runtime.getURL('storage.js')`, so `storage.js` is listed under `web_accessible_resources` in `manifest.json`.
+- **Feature separation**:
+  - `background.js` handles capture, deduplication, tagging, native messaging.
+  - `overlay/overlay.js` focuses on rendering and user interaction by calling storage helpers.
+
+### Manual testing checklist
+
+- **Reload**: `chrome://extensions` → Reload the unpacked extension.
+- **Toggle overlay**: Cmd+Shift+O / Ctrl+Shift+Space (or toolbar icon) to ensure the UI loads.
+- **Save clip**: Select text and press Cmd+Shift+U / Ctrl+Shift+S. Confirm toast, flash, and new clip entry.
+- **CRUD flows**: Pin, edit, delete, undo delete, and clear clips—verify persistence after reload.
+- **Folders/tags**: Add a folder, save to it, delete the folder (clips should fall back to “All”). Adjust tag rules and confirm tags update.
+- **Layout prefs**: Drag or resize the overlay, toggle theme/reduce-motion, then reopen the overlay to confirm the stored preferences stick.
