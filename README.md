@@ -1,6 +1,6 @@
 # Gigi's Copy Tool (Chrome MV3)
 
-A minimal, robust multi-clipboard extension to save multiple text selections from any webpage and manage them in an in-page overlay. Zero external dependencies.
+A minimal, robust multi-clipboard extension to save multiple text selections from any webpage and manage them in an in-page overlay. Zero external dependencies and fully operable offline on a single machine.
 
 ## Features
 
@@ -58,6 +58,7 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
 
 ## Notes
 
+- Self-contained: Runs entirely via Chrome MV3 APIs; no backend services or SaaS accounts required.
 - Shortcuts can be adjusted at `chrome://extensions/shortcuts`.
 - Not available on restricted pages (e.g., `chrome://*`, Chrome Web Store). For `file://` pages, enable "Allow access to file URLs" for this extension in `chrome://extensions`.
 - Clipboard operations use the extension page context.
@@ -90,6 +91,7 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
 - Background service worker: `background.js`
 - In-page overlay UI: `overlay/overlay.js`
 - Storage helpers: `storage.js`
+- Documentation drafts and planning artifacts live outside the extension bundle in `../docs/` (not tracked in Git).
 
 No build step required. Reload the extension after changes.
 
