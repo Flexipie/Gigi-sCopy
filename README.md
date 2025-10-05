@@ -39,6 +39,7 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
 2. **Open Chrome** → visit `chrome://extensions`.
 3. **Enable** "Developer mode" (top-right toggle).
 4. **Click** "Load unpacked" and choose the `ChromeExtension/` folder inside the cloned/downloaded project.
+5. **Optional**: Visit `chrome://extensions/shortcuts` and set both extension shortcuts to "Global" if you want them to work outside Chrome’s focused window.
 
 ## Usage
 
