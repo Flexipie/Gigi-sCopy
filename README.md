@@ -35,10 +35,10 @@ A minimal, robust multi-clipboard extension to save multiple text selections fro
 
 ## Install (Developer Mode)
 
-1. Open Chrome → go to `chrome://extensions`
-2. Enable "Developer mode" (top-right)
-3. Click "Load unpacked" and select this folder:
-   - `/Users/flexipie/Desktop/Code/Projects/Gigi'sCopyTools/ChromeExtension`
+1. **Get the code**: Clone this repository or download the ZIP from GitHub, then unzip it.
+2. **Open Chrome** → visit `chrome://extensions`.
+3. **Enable** "Developer mode" (top-right toggle).
+4. **Click** "Load unpacked" and choose the `ChromeExtension/` folder inside the cloned/downloaded project.
 
 ## Usage
 
