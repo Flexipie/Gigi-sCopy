@@ -1,15 +1,18 @@
 /**
  * Mock Chrome APIs for testing
- * Provides jest.fn() implementations of chrome.storage, chrome.runtime, etc.
+ * Simple implementations without jest.fn() - tests will spy on these as needed
  */
 
-// Storage mock
+// Storage mock data
 const storageData = {};
+
+// Helper no-op function
+const noop = () => {};
 
 export const chrome = {
   storage: {
     local: {
-      get: jest.fn((keys, callback) => {
+      get(keys, callback) {
         if (typeof keys === 'function') {
           callback = keys;
           keys = null;
@@ -34,85 +37,85 @@ export const chrome = {
           setTimeout(() => callback(result), 0);
         }
         return Promise.resolve(result);
-      }),
+      },
       
-      set: jest.fn((items, callback) => {
+      set(items, callback) {
         Object.assign(storageData, items);
         if (callback) {
           setTimeout(callback, 0);
         }
         return Promise.resolve();
-      }),
+      },
       
-      remove: jest.fn((keys, callback) => {
+      remove(keys, callback) {
         const keyArray = Array.isArray(keys) ? keys : [keys];
         keyArray.forEach(key => delete storageData[key]);
         if (callback) {
           setTimeout(callback, 0);
         }
         return Promise.resolve();
-      }),
+      },
       
-      clear: jest.fn((callback) => {
+      clear(callback) {
         Object.keys(storageData).forEach(key => delete storageData[key]);
         if (callback) {
           setTimeout(callback, 0);
         }
         return Promise.resolve();
-      })
+      }
     },
     
     onChanged: {
-      addListener: jest.fn(),
-      removeListener: jest.fn()
+      addListener: noop,
+      removeListener: noop
     }
   },
   
   runtime: {
     lastError: null,
     onInstalled: {
-      addListener: jest.fn()
+      addListener: noop
     },
     onStartup: {
-      addListener: jest.fn()
+      addListener: noop
     },
-    getURL: jest.fn((path) => `chrome-extension://mock-id/${path}`),
-    connectNative: jest.fn(),
-    sendMessage: jest.fn()
+    getURL: (path) => `chrome-extension://mock-id/${path}`,
+    connectNative: noop,
+    sendMessage: noop
   },
   
   contextMenus: {
-    create: jest.fn(),
+    create: noop,
     onClicked: {
-      addListener: jest.fn()
+      addListener: noop
     }
   },
   
   commands: {
     onCommand: {
-      addListener: jest.fn()
+      addListener: noop
     }
   },
   
   alarms: {
-    create: jest.fn(),
+    create: noop,
     onAlarm: {
-      addListener: jest.fn()
+      addListener: noop
     }
   },
   
   tabs: {
-    query: jest.fn(),
-    sendMessage: jest.fn()
+    query: () => Promise.resolve([]),
+    sendMessage: noop
   },
   
   scripting: {
-    executeScript: jest.fn()
+    executeScript: () => Promise.resolve([])
   },
   
   action: {
     onClicked: {
-      addListener: jest.fn()
+      addListener: noop
     }
   }
 };

@@ -27,7 +27,6 @@ import {
 describe('Storage Helpers', () => {
   beforeEach(() => {
     resetChromeStorage();
-    jest.clearAllMocks();
   });
 
   describe('getClips', () => {
@@ -218,55 +217,41 @@ describe('Storage Helpers', () => {
     it('should return default settings when none exist', async () => {
       const settings = await getOverlaySettings();
       expect(settings).toEqual({
-        width: null,
-        height: null,
-        left: null,
-        top: null,
         theme: 'auto',
         reduceMotion: false,
-        copyFormat: 'bullets'
+        position: null
       });
     });
 
     it('should return stored overlay settings', async () => {
       setChromeStorage({
-        overlayWidth: 600,
-        overlayHeight: 400,
-        overlayLeft: 100,
-        overlayTop: 50,
+        overlayPos: { left: 100, top: 50 },
         overlayTheme: 'dark',
-        overlayReduceMotion: true,
-        copyFormat: 'numbered'
+        overlayReduceMotion: true
       });
       
       const settings = await getOverlaySettings();
       expect(settings).toEqual({
-        width: 600,
-        height: 400,
-        left: 100,
-        top: 50,
         theme: 'dark',
         reduceMotion: true,
-        copyFormat: 'numbered'
+        position: { left: 100, top: 50 }
       });
     });
   });
 
   describe('setOverlayPosition', () => {
     it('should persist overlay position', async () => {
-      await setOverlayPosition(200, 150);
+      await setOverlayPosition({ left: 200, top: 150 });
       const stored = getChromeStorage();
-      expect(stored.overlayLeft).toBe(200);
-      expect(stored.overlayTop).toBe(150);
+      expect(stored.overlayPos).toEqual({ left: 200, top: 150 });
     });
   });
 
   describe('setOverlaySize', () => {
     it('should persist overlay size', async () => {
-      await setOverlaySize(800, 600);
+      await setOverlaySize({ width: 800, height: 600 });
       const stored = getChromeStorage();
-      expect(stored.overlayWidth).toBe(800);
-      expect(stored.overlayHeight).toBe(600);
+      expect(stored.overlaySize).toEqual({ width: 800, height: 600 });
     });
   });
 
@@ -291,7 +276,7 @@ describe('Storage Helpers', () => {
       const clips = [{ id: '1', text: 'Test' }];
       const folders = [{ id: 'f1', name: 'Work' }];
       
-      await setClipsAndFolders(clips, folders);
+      await setClipsAndFolders({ clips, folders });
       
       const stored = getChromeStorage();
       expect(stored.clips).toEqual(clips);
