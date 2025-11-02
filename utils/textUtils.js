@@ -10,7 +10,7 @@
  * @returns {string} Normalized text
  */
 export function normalizeText(text) {
-  return (text || "").replace(/\s+/g, " ").trim().toLowerCase();
+  return (text || '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 /**

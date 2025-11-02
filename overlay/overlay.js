@@ -1,6 +1,6 @@
 // Gigi's Copy Tool In-Page Overlay (toggle)
 // Injected via chrome.scripting.executeScript to show/hide a draggable overlay inside the page.
-;(async () => {
+(async () => {
   const HOST_ID = 'qmc-overlay-host';
   const SHADOW_ID = 'qmc-overlay-shadow-root';
 
@@ -1564,8 +1564,8 @@
 
         const action = confirm(
           `Import ${imported.length} clips?\n\n` +
-          `OK = Merge with existing clips\n` +
-          `Cancel = Abort import`
+          'OK = Merge with existing clips\n' +
+          'Cancel = Abort import'
         );
 
         if (!action) {

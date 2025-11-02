@@ -59,14 +59,14 @@ export class TagRuleEngine {
     
     // Evaluate based on rule type
     switch (type) {
-      case TAG_RULE_TYPES.URL_CONTAINS:
-        return this.evaluateUrlContains(url, patternStr, ruleTags);
+    case TAG_RULE_TYPES.URL_CONTAINS:
+      return this.evaluateUrlContains(url, patternStr, ruleTags);
       
-      case TAG_RULE_TYPES.TEXT_REGEX:
-        return this.evaluateTextRegex(text, patternStr, ruleTags);
+    case TAG_RULE_TYPES.TEXT_REGEX:
+      return this.evaluateTextRegex(text, patternStr, ruleTags);
       
-      default:
-        return [];
+    default:
+      return [];
     }
   }
 
