@@ -27,6 +27,7 @@
       "services/**/*.js",
       "utils/**/*.js",
       "!jest.config.js",
+      "!background.js",
       "!coverage/**",
       "!node_modules/**"
     ],
