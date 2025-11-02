@@ -1,11 +1,15 @@
 // Gigi's Copy Tool Background Service Worker (MV3)
 // Handles commands, context menu, selection capture, storage, and overlay UI
 
-import { getActiveFolderId } from './storage.js';
-import { ClipService } from './services/ClipService.js';
-import { CONFIG, RESTRICTED_URL_PREFIXES, CLIP_SOURCES } from './constants.js';
+import {
+  getClips,
+  setClips,
+  getTagRules,
+  getActiveFolderId
+} from './storage.js';
 
-const { MENU_ID, NATIVE_HOST, NATIVE_DRAIN_INTERVAL_MINUTES, TAG_RECOMPUTE_DEBOUNCE_MS } = CONFIG;
+const MENU_ID = 'quickmulticlip_save_selection';
+const NATIVE_HOST = 'com.gigi.copytool';
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
@@ -15,7 +19,7 @@ chrome.runtime.onInstalled.addListener(async () => {
       contexts: ['selection']
     });
     // poll the native host periodically to import desktop clips
-    chrome.alarms.create('desktop-drain', { periodInMinutes: NATIVE_DRAIN_INTERVAL_MINUTES });
+    chrome.alarms.create('desktop-drain', { periodInMinutes: 0.083 }); // ~5s
     // do an immediate drain on install to avoid waiting for first alarm
     drainDesktopQueue();
   } catch (e) {
@@ -26,7 +30,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 // also recreate the alarm on browser startup (MV3 SW can be restarted)
 if (chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
-    try { chrome.alarms.create('desktop-drain', { periodInMinutes: NATIVE_DRAIN_INTERVAL_MINUTES }); } catch (_) {}
+    try { chrome.alarms.create('desktop-drain', { periodInMinutes: 0.083 }); } catch (_) {}
     // immediate drain on startup
     drainDesktopQueue();
   });
@@ -38,14 +42,129 @@ try {
     if (area !== 'local') return;
     if ('tagRules' in changes) {
       clearTimeout(globalThis.__qmc_recomputeTagsTimer);
-      globalThis.__qmc_recomputeTagsTimer = setTimeout(() => {
-        ClipService.recomputeAllTags().catch(err => console.warn('Tag recompute error:', err));
-      }, TAG_RECOMPUTE_DEBOUNCE_MS);
+      globalThis.__qmc_recomputeTagsTimer = setTimeout(() => { recomputeAllTags(); }, 120);
     }
   });
 } catch(_) {}
 
-// All business logic moved to services/
+// Normalization and dedup helpers
+function normalizeText(text) {
+  return (text || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function hashString(s) {
+  // Simple 32-bit hash
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return String(h >>> 0);
+}
+
+async function saveClipWithDedup(partial) {
+  try {
+    const { text, title = '', url = '', createdAt = Date.now(), folderId = null, source } = partial || {};
+    const norm = normalizeText(text);
+    if (!norm) return null;
+    const hash = hashString(norm);
+
+    // Evaluate tag rules for this clip
+    const tagsToAdd = await evaluateTags(text || '', url || '');
+
+    const clips = await getClips();
+
+    let idx = clips.findIndex(c => {
+      if (!c) return false;
+      if (typeof c.hash === 'string') return c.hash === hash;
+      const ct = normalizeText(c.text || '');
+      return ct && hashString(ct) === hash;
+    });
+
+    if (idx >= 0) {
+      const existing = clips[idx];
+      const dupCount = Number(existing.dupCount || 1) + 1;
+      // Merge tags (unique)
+      const existingTags = Array.isArray(existing.tags) ? existing.tags.filter(Boolean) : [];
+      const mergedTags = Array.from(new Set([...existingTags, ...tagsToAdd]));
+      clips[idx] = { ...existing, dupCount, updatedAt: Date.now(), hash: existing.hash || hash, tags: mergedTags };
+    } else {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const clip = { id, text, title, url, createdAt, folderId, starred: false, dupCount: 1, hash, source, tags: tagsToAdd };
+      clips.push(clip);
+    }
+    await setClips(clips);
+    return true;
+  } catch (e) {
+    console.warn('saveClipWithDedup error', e);
+    return null;
+  }
+}
+
+function evaluateTagsWithRules(tagRules, text, url) {
+  try {
+    const rules = Array.isArray(tagRules) ? tagRules : [];
+    if (!rules.length) return [];
+    const out = new Set();
+    const t = String(text || '');
+    const u = String(url || '');
+    for (const r of rules) {
+      if (!r || typeof r !== 'object') continue;
+      const type = String(r.type || '');
+      const pattern = String(r.pattern || '');
+      const ruleTags = Array.isArray(r.tags) ? r.tags.map(x => String(x || '').trim()).filter(Boolean) : [];
+      if (ruleTags.length === 0) continue;
+      if (type === 'url-contains') {
+        if (!pattern) continue;
+        if (u.toLowerCase().includes(pattern.toLowerCase())) {
+          ruleTags.forEach(tag => out.add(tag));
+        }
+      } else if (type === 'text-regex') {
+        if (!pattern) continue;
+        try {
+          const re = new RegExp(pattern, 'i');
+          if (re.test(t)) ruleTags.forEach(tag => out.add(tag));
+        } catch (_) {
+          // invalid regex; ignore this rule safely
+        }
+      }
+    }
+    return Array.from(out);
+  } catch (e) {
+    console.warn('evaluateTagsWithRules error', e);
+    return [];
+  }
+}
+
+async function evaluateTags(text, url) {
+  try {
+    const tagRules = await getTagRules();
+    return evaluateTagsWithRules(tagRules, text, url);
+  } catch (e) {
+    console.warn('evaluateTags error', e);
+    return [];
+  }
+}
+
+async function recomputeAllTags() {
+  try {
+    const [clips, tagRules] = await Promise.all([getClips(), getTagRules()]);
+    let changed = false;
+    const next = clips.map(c => {
+      if (!c || typeof c !== 'object') return c;
+      const newTags = evaluateTagsWithRules(tagRules, c.text || '', c.url || '');
+      const oldTags = Array.isArray(c.tags) ? c.tags.filter(Boolean) : [];
+      // Compare as sets (order-insensitive)
+      const a = Array.from(new Set(newTags));
+      const b = Array.from(new Set(oldTags));
+      const eq = a.length === b.length && a.every(t => b.includes(t));
+      if (!eq) { changed = true; return { ...c, tags: a }; }
+      return c;
+    });
+    if (changed) await setClips(next);
+  } catch (e) {
+    console.warn('recomputeAllTags error', e);
+  }
+}
 
 // ---- Native Messaging bridge (desktop helper) ----
 if (chrome.alarms && chrome.alarms.onAlarm && typeof chrome.alarms.onAlarm.addListener === 'function') {
@@ -98,13 +217,13 @@ async function drainDesktopQueue() {
         console.log(`Native: saving clip ${i + 1}/${receivedMsgs.length}`);
         const createdAt = m.createdAt ? Math.round(Number(m.createdAt) * 1000) : Date.now();
         const app = typeof m.app === 'string' ? m.app : 'Desktop';
-        const result = await ClipService.saveWithDedup({
+        const result = await saveClipWithDedup({
           text: m.text,
           title: app,
           url: '',
           createdAt,
           folderId: activeFolderId || null,
-          source: CLIP_SOURCES.NATIVE
+          source: 'native'
         });
         console.log(`Native: clip ${i + 1} save result:`, result);
       }
@@ -173,10 +292,9 @@ chrome.action?.onClicked.addListener(async () => {
 
 async function handleSaveSelection(tabId, tabMeta) {
   try {
-    // Skip restricted pages
+    // Skip restricted pages (chrome://, chrome-extension://, etc.)
     const url = tabMeta?.url || '';
-    const isRestricted = RESTRICTED_URL_PREFIXES.some(prefix => url.startsWith(prefix));
-    if (isRestricted) {
+    if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('edge://') || url.startsWith('about:')) {
       console.log('Cannot save selection from restricted page:', url);
       return;
     }
@@ -221,14 +339,14 @@ async function handleSaveSelection(tabId, tabMeta) {
     }
 
     // 2) Save to storage with dedup (prefer tab metadata for title/url) and attach active folder if set
-    const activeFolderId = await getActiveFolderId();
-    await ClipService.saveWithDedup({
+    const { activeFolderId = null } = await chrome.storage.local.get({ activeFolderId: null });
+    await saveClipWithDedup({
       text,
       title: tabMeta?.title || '',
       url: tabMeta?.url || '',
       createdAt: Date.now(),
       folderId: activeFolderId || null,
-      source: CLIP_SOURCES.WEB
+      source: 'web'
     });
 
     // 3) Visual feedback: highlight selection + toast in the correct frame
