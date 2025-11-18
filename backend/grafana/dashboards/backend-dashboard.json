@@ -1,0 +1,193 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "gigis-backend",
+    "title": "Gigi's Copy Tool - Backend Metrics",
+    "tags": ["backend", "chrome-extension", "prometheus"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8},
+        "type": "stat",
+        "title": "Total HTTP Requests",
+        "targets": [
+          {
+            "expr": "sum(http_requests_total)",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 2,
+        "gridPos": {"x": 8, "y": 0, "w": 8, "h": 8},
+        "type": "stat",
+        "title": "Error Rate (%)",
+        "targets": [
+          {
+            "expr": "(sum(rate(http_errors_total[5m])) / sum(rate(http_requests_total[5m]))) * 100",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 1, "color": "yellow"},
+                {"value": 5, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8},
+        "type": "stat",
+        "title": "Active Users",
+        "targets": [
+          {
+            "expr": "extension_active_users",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "type": "graph",
+        "title": "Request Rate (req/s)",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[1m]))",
+            "refId": "A",
+            "legendFormat": "Total Requests"
+          },
+          {
+            "expr": "sum(rate(http_errors_total[1m]))",
+            "refId": "B",
+            "legendFormat": "Errors"
+          }
+        ],
+        "yaxes": [
+          {"format": "reqps", "label": "Requests/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 5,
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+        "type": "graph",
+        "title": "Response Time (Latency)",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "refId": "A",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "refId": "B",
+            "legendFormat": "p95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))",
+            "refId": "C",
+            "legendFormat": "p99"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Latency"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 6,
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "type": "graph",
+        "title": "Clips Saved Over Time",
+        "targets": [
+          {
+            "expr": "sum(rate(extension_clips_saved_total[1m])) by (source)",
+            "refId": "A",
+            "legendFormat": "{{source}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "cpm", "label": "Clips/min"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "type": "piechart",
+        "title": "Clips by Source",
+        "targets": [
+          {
+            "expr": "sum(extension_clips_saved_total) by (source)",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+        "type": "table",
+        "title": "Top Tags Applied",
+        "targets": [
+          {
+            "expr": "topk(10, sum(extension_tags_applied_total) by (tag))",
+            "refId": "A",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+        "type": "graph",
+        "title": "Memory Usage",
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes / 1024 / 1024",
+            "refId": "A",
+            "legendFormat": "Memory (MB)"
+          }
+        ],
+        "yaxes": [
+          {"format": "decmbytes", "label": "Memory"},
+          {"format": "short"}
+        ]
+      }
+    ],
+    "time": {"from": "now-1h", "to": "now"},
+    "timepicker": {},
+    "templating": {"list": []},
+    "annotations": {"list": []}
+  }
+}

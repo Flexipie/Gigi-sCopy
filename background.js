@@ -3,6 +3,7 @@
 
 import { getActiveFolderId } from './storage.js';
 import { ClipService } from './services/ClipService.js';
+import { SyncService } from './services/SyncService.js';
 import { CONFIG, RESTRICTED_URL_PREFIXES, CLIP_SOURCES } from './constants.js';
 
 const { MENU_ID, NATIVE_HOST, NATIVE_DRAIN_INTERVAL_MINUTES, TAG_RECOMPUTE_DEBOUNCE_MS } = CONFIG;
@@ -18,6 +19,11 @@ chrome.runtime.onInstalled.addListener(async () => {
     chrome.alarms.create('desktop-drain', { periodInMinutes: NATIVE_DRAIN_INTERVAL_MINUTES });
     // do an immediate drain on install to avoid waiting for first alarm
     drainDesktopQueue();
+    
+    // Create sync alarm (sync every 5 minutes)
+    chrome.alarms.create('clip-sync', { periodInMinutes: 5 });
+    // Do immediate sync on install
+    SyncService.syncClips().catch(err => console.warn('Initial sync failed:', err));
   } catch (e) {
     // Ignore if already exists
   }
@@ -26,9 +32,13 @@ chrome.runtime.onInstalled.addListener(async () => {
 // also recreate the alarm on browser startup (MV3 SW can be restarted)
 if (chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
-    try { chrome.alarms.create('desktop-drain', { periodInMinutes: NATIVE_DRAIN_INTERVAL_MINUTES }); } catch (_) {}
-    // immediate drain on startup
+    try { 
+      chrome.alarms.create('desktop-drain', { periodInMinutes: NATIVE_DRAIN_INTERVAL_MINUTES });
+      chrome.alarms.create('clip-sync', { periodInMinutes: 5 });
+    } catch (_) {}
+    // immediate drain and sync on startup
     drainDesktopQueue();
+    SyncService.syncClips().catch(err => console.warn('Startup sync failed:', err));
   });
 }
 
@@ -47,12 +57,15 @@ try {
 
 // All business logic moved to services/
 
-// ---- Native Messaging bridge (desktop helper) ----
+// ---- Alarm handlers ----
 if (chrome.alarms && chrome.alarms.onAlarm && typeof chrome.alarms.onAlarm.addListener === 'function') {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm && alarm.name === 'desktop-drain') {
       console.log('Native: alarm fired, starting drain...');
       drainDesktopQueue();
+    } else if (alarm && alarm.name === 'clip-sync') {
+      console.log('Sync: alarm fired, starting sync...');
+      SyncService.syncClips().catch(err => console.warn('Periodic sync failed:', err));
     }
   });
 }

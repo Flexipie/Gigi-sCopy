@@ -1,0 +1,57 @@
+# Prometheus Configuration
+# Scrapes metrics from the backend service
+
+global:
+  scrape_interval: 15s # Scrape metrics every 15 seconds
+  evaluation_interval: 15s # Evaluate rules every 15 seconds
+  external_labels:
+    monitor: 'gigis-copy-tool-monitor'
+    environment: 'production'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+# rule_files:
+#   - "alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Scrape the backend service
+  - job_name: 'gigis-backend'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['backend:3000']
+        labels:
+          service: 'gigis-copy-tool-backend'
+          environment: 'production'
+
+    # Relabeling to extract useful labels
+    metric_relabel_configs:
+      # Add instance label
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'backend:3000'
+
+  # Health check endpoint monitoring
+  - job_name: 'health-checks'
+    scrape_interval: 30s
+    metrics_path: '/health/detailed'
+    static_configs:
+      - targets: ['backend:3000']
+        labels:
+          service: 'health-check'
+          check_type: 'detailed'

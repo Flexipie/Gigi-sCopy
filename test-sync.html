@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sync Service Test</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .success { color: green; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>🔄 Sync Service Test</h1>
+  
+  <div>
+    <h2>Test Clips API</h2>
+    <button onclick="testCreateClip()">1. Create Clip</button>
+    <button onclick="testGetClips()">2. Get All Clips</button>
+    <button onclick="testBatchUpload()">3. Batch Upload (5 clips)</button>
+    <button onclick="testIncrementalSync()">4. Incremental Sync</button>
+    <button onclick="testStats()">5. Get Stats</button>
+    <button onclick="clearOutput()">Clear Output</button>
+  </div>
+  
+  <h3>Output:</h3>
+  <pre id="output">Ready to test...</pre>
+  
+  <script type="module">
+    const BACKEND_URL = 'http://localhost:3000';
+    const output = document.getElementById('output');
+    
+    function log(message, isError = false) {
+      const timestamp = new Date().toLocaleTimeString();
+      const className = isError ? 'error' : 'success';
+      output.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+      output.scrollTop = output.scrollHeight;
+    }
+    
+    window.clearOutput = () => {
+      output.textContent = 'Ready to test...\n';
+    };
+    
+    window.testCreateClip = async () => {
+      try {
+        log('Creating clip...');
+        const clip = {
+          id: `clip-${Date.now()}`,
+          text: `Test clip created at ${new Date().toLocaleString()}`,
+          title: 'Test Clip',
+          tags: ['test', 'demo'],
+          createdAt: Date.now(),
+          deviceId: 'test-device-web',
+          source: 'web'
+        };
+        
+        const response = await fetch(`${BACKEND_URL}/api/clips`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(clip)
+        });
+        
+        const result = await response.json();
+        log(`✓ Clip created: ${result.clip.id}`);
+        log(JSON.stringify(result, null, 2));
+      } catch (error) {
+        log(`✗ Error: ${error.message}`, true);
+      }
+    };
+    
+    window.testGetClips = async () => {
+      try {
+        log('Fetching all clips...');
+        const response = await fetch(`${BACKEND_URL}/api/clips`);
+        const result = await response.json();
+        log(`✓ Found ${result.count} clips`);
+        log(JSON.stringify(result, null, 2));
+      } catch (error) {
+        log(`✗ Error: ${error.message}`, true);
+      }
+    };
+    
+    window.testBatchUpload = async () => {
+      try {
+        log('Batch uploading 5 clips...');
+        const clips = [];
+        for (let i = 0; i < 5; i++) {
+          clips.push({
+            id: `batch-clip-${Date.now()}-${i}`,
+            text: `Batch clip #${i + 1}`,
+            title: `Batch Test ${i + 1}`,
+            tags: [`batch`, `test${i + 1}`],
+            createdAt: Date.now() + i,
+            deviceId: 'test-device-batch',
+            source: 'web'
+          });
+        }
+        
+        const response = await fetch(`${BACKEND_URL}/api/clips/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clips })
+        });
+        
+        const result = await response.json();
+        log(`✓ Batch upload: ${result.saved} saved, ${result.errors} errors`);
+        log(JSON.stringify(result, null, 2));
+      } catch (error) {
+        log(`✗ Error: ${error.message}`, true);
+      }
+    };
+    
+    window.testIncrementalSync = async () => {
+      try {
+        log('Testing incremental sync...');
+        const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+        const response = await fetch(`${BACKEND_URL}/api/clips?since=${fiveMinutesAgo}`);
+        const result = await response.json();
+        log(`✓ Found ${result.count} clips modified in last 5 minutes`);
+        log(JSON.stringify(result, null, 2));
+      } catch (error) {
+        log(`✗ Error: ${error.message}`, true);
+      }
+    };
+    
+    window.testStats = async () => {
+      try {
+        log('Fetching stats...');
+        const response = await fetch(`${BACKEND_URL}/api/clips/stats/summary`);
+        const result = await response.json();
+        log(`✓ Stats retrieved`);
+        log(JSON.stringify(result, null, 2));
+      } catch (error) {
+        log(`✗ Error: ${error.message}`, true);
+      }
+    };
+  </script>
+</body>
+</html>

@@ -25,3 +25,9 @@ node_modules/
 
 # Testing
 coverage/
+
+# Backend
+backend/node_modules/
+backend/data/
+backend/logs/
+backend/.env
