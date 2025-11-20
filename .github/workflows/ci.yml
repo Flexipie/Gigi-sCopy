@@ -13,6 +13,63 @@ on:
     branches: [ main, develop ]
 
 jobs:
+  test:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: tests/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: tests
+        run: npm ci
+      
+      - name: Run tests
+        working-directory: tests
+        run: npm test
+      
+      - name: Run coverage
+        working-directory: tests
+        run: npm run test:coverage
+      
+      - name: Check coverage threshold (70%)
+        working-directory: tests
+        run: |
+          COVERAGE=$(cat coverage/coverage-summary.json | jq '.total.lines.pct')
+          echo "📊 Code Coverage: $COVERAGE%"
+          if (( $(echo "$COVERAGE < 70" | bc -l) )); then
+            echo "❌ Coverage is below 70% threshold ($COVERAGE%)"
+            exit 1
+          fi
+          echo "✅ Coverage threshold met: $COVERAGE% (Required: 70%)"
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./tests/coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+      
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-node-${{ matrix.node-version }}
+          path: tests/coverage/
+          retention-days: 30
+
   validate:
     name: Validate Extension
     runs-on: ubuntu-latest
@@ -53,7 +110,7 @@ jobs:
   build:
     name: Build Extension
     runs-on: ubuntu-latest
-    needs: validate
+    needs: [test, validate]
     
     steps:
       - name: Checkout code
