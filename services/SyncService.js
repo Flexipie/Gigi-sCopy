@@ -7,7 +7,8 @@ import { getClips, setClips } from '../storage.js';
 import { CONFIG } from '../constants.js';
 
 // Backend URL - change this to your Azure URL when deployed
-const BACKEND_URL = 'http://localhost:3000';
+// const BACKEND_URL = 'http://localhost:3000'; // For local testing
+const BACKEND_URL = 'http://gigis-backend-felix.eastus.azurecontainer.io:3000'; // Azure deployment
 const SYNC_ENDPOINT = `${BACKEND_URL}/api/clips`;
 
 // Generate or retrieve device ID
