@@ -1,6 +1,6 @@
 # Gigi's Copy Tool - Backend Service
 
-Companion backend service for the Gigi's Copy Tool Chrome Extension. Provides health checks, metrics collection, and telemetry tracking.
+Companion backend service for the Gigi's Copy Tool Chrome Extension. Provides health checks, metrics collection, telemetry tracking, and cross-device clip synchronization.
 
 ## 📋 Features
 
