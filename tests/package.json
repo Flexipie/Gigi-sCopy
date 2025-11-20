@@ -14,6 +14,14 @@
     "testEnvironment": "node",
     "transform": {},
     "setupFilesAfterEnv": ["<rootDir>/__tests__/setup.js"],
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    },
+    "coveragePathIgnorePatterns": [
+      "/node_modules/",
+      "/__tests__/",
+      "/__mocks__/"
+    ],
     "coverageThreshold": {
       "global": {
         "branches": 70,
@@ -23,13 +31,12 @@
       }
     },
     "collectCoverageFrom": [
-      "*.js",
-      "services/**/*.js",
-      "utils/**/*.js",
-      "!jest.config.js",
-      "!background.js",
-      "!coverage/**",
-      "!node_modules/**"
+      "../*.js",
+      "../services/**/*.js",
+      "../utils/**/*.js",
+      "!../jest.config.js",
+      "!../background.js",
+      "!../node_modules/**"
     ],
     "testMatch": [
       "**/__tests__/**/*.test.js"
