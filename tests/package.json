@@ -31,12 +31,16 @@
       }
     },
     "collectCoverageFrom": [
-      "../*.js",
-      "../services/**/*.js",
-      "../utils/**/*.js",
-      "!../jest.config.js",
-      "!../background.js",
-      "!../node_modules/**"
+      "*.js",
+      "services/**/*.js",
+      "utils/**/*.js",
+      "!jest.config.js",
+      "!background.js",
+      "!services/SyncService.js",
+      "!node_modules/**",
+      "!__tests__/**",
+      "!__mocks__/**",
+      "!coverage/**"
     ],
     "testMatch": [
       "**/__tests__/**/*.test.js"
