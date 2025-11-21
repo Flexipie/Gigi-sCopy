@@ -1,0 +1,483 @@
+/**
+ * Unit tests for SyncService
+ */
+
+import { resetChromeStorage, setChromeStorage, getChromeStorage } from '../../__mocks__/chrome.js';
+import { SyncService } from '../../services/SyncService.js';
+
+// Mock fetch globally
+global.fetch = jest.fn();
+
+describe('SyncService', () => {
+  beforeEach(() => {
+    resetChromeStorage();
+    global.fetch.mockReset();
+  });
+
+  describe('Device ID Management', () => {
+    test('should generate device ID on first call', async () => {
+      const status = await SyncService.getSyncStatus();
+      
+      expect(status.deviceId).toBeDefined();
+      expect(status.deviceId).toMatch(/^device-\d+-[a-z0-9]+$/);
+    });
+
+    test('should reuse existing device ID', async () => {
+      const status1 = await SyncService.getSyncStatus();
+      const status2 = await SyncService.getSyncStatus();
+      
+      expect(status1.deviceId).toBe(status2.deviceId);
+    });
+
+    test('should persist device ID in chrome.storage', async () => {
+      await SyncService.getSyncStatus();
+      const stored = await chrome.storage.local.get('deviceId');
+      
+      expect(stored.deviceId).toBeDefined();
+      expect(stored.deviceId).toMatch(/^device-\d+-[a-z0-9]+$/);
+    });
+  });
+
+  describe('getSyncStatus', () => {
+    test('should return sync status with never synced', async () => {
+      const status = await SyncService.getSyncStatus();
+      
+      expect(status).toHaveProperty('deviceId');
+      expect(status).toHaveProperty('lastSync');
+      expect(status).toHaveProperty('enabled');
+      expect(status.lastSync).toBe('never');
+      expect(status.enabled).toBe(true);
+    });
+
+    test('should return last sync timestamp when available', async () => {
+      const now = Date.now();
+      await chrome.storage.local.set({ lastSyncTime: now.toString() });
+      
+      const status = await SyncService.getSyncStatus();
+      
+      expect(status.lastSync).toBe(new Date(now).toLocaleString());
+    });
+
+    test('should handle invalid lastSyncTime gracefully', async () => {
+      await chrome.storage.local.set({ lastSyncTime: 'invalid' });
+      
+      const status = await SyncService.getSyncStatus();
+      
+      expect(status.lastSync).toBe('never');
+    });
+  });
+
+  describe('syncClips - Upload', () => {
+    test('should upload local clips to backend', async () => {
+      // Setup local clips
+      await setChromeStorage('clips', [
+        {
+          id: 'clip-1',
+          text: 'Test clip 1',
+          tags: ['test'],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        },
+        {
+          id: 'clip-2',
+          text: 'Test clip 2',
+          tags: ['test'],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }
+      ]);
+
+      // Mock successful upload
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 2 })
+      });
+
+      // Mock empty download response
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([])
+      });
+
+      const result = await SyncService.syncClips();
+
+      expect(result.success).toBe(true);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      
+      // Check upload call
+      const uploadCall = global.fetch.mock.calls[0];
+      expect(uploadCall[0]).toContain('/batch');
+      expect(uploadCall[1].method).toBe('POST');
+    });
+
+    test('should handle upload failure gracefully', async () => {
+      await setChromeStorage('clips', [
+        { id: 'clip-1', text: 'Test', tags: [], createdAt: Date.now(), updatedAt: Date.now() }
+      ]);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Server Error'
+      });
+
+      const result = await SyncService.syncClips();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Upload failed');
+    });
+
+    test('should not upload if no clips exist', async () => {
+      await setChromeStorage('clips', []);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([])
+      });
+
+      await SyncService.syncClips();
+
+      // Should only call download, not upload
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch.mock.calls[0][0]).toContain('?since=');
+    });
+  });
+
+  describe('syncClips - Download', () => {
+    test('should download and merge remote clips', async () => {
+      await setChromeStorage('clips', []);
+
+      // Mock empty upload response
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 0 })
+      });
+
+      // Mock download with remote clips
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([
+          {
+            id: 'remote-1',
+            text: 'Remote clip',
+            tags: ['remote'],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            deviceId: 'other-device'
+          }
+        ])
+      });
+
+      const result = await SyncService.syncClips();
+
+      expect(result.success).toBe(true);
+      
+      const clips = await getChromeStorage('clips');
+      expect(clips).toHaveLength(1);
+      expect(clips[0].id).toBe('remote-1');
+      expect(clips[0].text).toBe('Remote clip');
+    });
+
+    test('should handle download failure gracefully', async () => {
+      await setChromeStorage('clips', []);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 0 })
+      });
+
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500
+      });
+
+      const result = await SyncService.syncClips();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Download failed');
+    });
+
+    test('should use lastSyncTime for incremental sync', async () => {
+      const lastSync = Date.now() - 60000; // 1 minute ago
+      await chrome.storage.local.set({ lastSyncTime: lastSync.toString() });
+      await setChromeStorage('clips', []);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 0 })
+      });
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([])
+      });
+
+      await SyncService.syncClips();
+
+      const downloadCall = global.fetch.mock.calls[1];
+      expect(downloadCall[0]).toContain(`?since=${lastSync}`);
+    });
+  });
+
+  describe('syncClips - Conflict Resolution', () => {
+    test('should use last-write-wins for conflicting clips', async () => {
+      const oldTime = Date.now() - 10000;
+      const newTime = Date.now();
+
+      // Local clip (older)
+      await setChromeStorage('clips', [
+        {
+          id: 'conflict-clip',
+          text: 'Old version',
+          tags: ['old'],
+          createdAt: oldTime,
+          updatedAt: oldTime
+        }
+      ]);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 1 })
+      });
+
+      // Remote clip (newer)
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([
+          {
+            id: 'conflict-clip',
+            text: 'New version',
+            tags: ['new'],
+            createdAt: oldTime,
+            updatedAt: newTime,
+            deviceId: 'other-device'
+          }
+        ])
+      });
+
+      await SyncService.syncClips();
+
+      const clips = await getChromeStorage('clips');
+      expect(clips).toHaveLength(1);
+      expect(clips[0].text).toBe('New version'); // Should keep newer version
+      expect(clips[0].tags).toEqual(['new']);
+    });
+
+    test('should keep local version if it is newer', async () => {
+      const oldTime = Date.now() - 10000;
+      const newTime = Date.now();
+
+      // Local clip (newer)
+      await setChromeStorage('clips', [
+        {
+          id: 'conflict-clip',
+          text: 'New local version',
+          tags: ['new'],
+          createdAt: oldTime,
+          updatedAt: newTime
+        }
+      ]);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 1 })
+      });
+
+      // Remote clip (older)
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([
+          {
+            id: 'conflict-clip',
+            text: 'Old remote version',
+            tags: ['old'],
+            createdAt: oldTime,
+            updatedAt: oldTime,
+            deviceId: 'other-device'
+          }
+        ])
+      });
+
+      await SyncService.syncClips();
+
+      const clips = await getChromeStorage('clips');
+      expect(clips).toHaveLength(1);
+      expect(clips[0].text).toBe('New local version'); // Should keep local newer version
+    });
+  });
+
+  describe('forceFullSync', () => {
+    test('should reset lastSyncTime and trigger full sync', async () => {
+      await chrome.storage.local.set({ lastSyncTime: Date.now().toString() });
+      await setChromeStorage('clips', []);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 0 })
+      });
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([])
+      });
+
+      const result = await SyncService.forceFullSync();
+
+      expect(result.success).toBe(true);
+      
+      // Should download all clips (since=0)
+      const downloadCall = global.fetch.mock.calls[1];
+      expect(downloadCall[0]).toContain('?since=0');
+    });
+
+    test('should handle full sync errors', async () => {
+      global.fetch.mockRejectedValueOnce(new Error('Network error'));
+
+      const result = await SyncService.forceFullSync();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Network error');
+    });
+  });
+
+  describe('Error Handling', () => {
+    test('should handle network errors gracefully', async () => {
+      await setChromeStorage('clips', []);
+      
+      global.fetch.mockRejectedValueOnce(new Error('Failed to fetch'));
+
+      const result = await SyncService.syncClips();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to fetch');
+    });
+
+    test('should handle malformed response data', async () => {
+      await setChromeStorage('clips', []);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 0 })
+      });
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => 'not an array'
+      });
+
+      const result = await SyncService.syncClips();
+
+      expect(result.success).toBe(false);
+    });
+
+    test('should update lastSyncTime even on partial success', async () => {
+      await setChromeStorage('clips', [
+        { id: 'clip-1', text: 'Test', tags: [], createdAt: Date.now(), updatedAt: Date.now() }
+      ]);
+
+      // Upload succeeds
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 1 })
+      });
+
+      // Download fails
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500
+      });
+
+      await SyncService.syncClips();
+
+      const stored = await chrome.storage.local.get('lastSyncTime');
+      expect(stored.lastSyncTime).toBeDefined();
+    });
+  });
+
+  describe('Edge Cases', () => {
+    test('should handle empty backend response', async () => {
+      await setChromeStorage('clips', []);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 0 })
+      });
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([])
+      });
+
+      const result = await SyncService.syncClips();
+
+      expect(result.success).toBe(true);
+      const clips = await getChromeStorage('clips');
+      expect(clips).toHaveLength(0);
+    });
+
+    test('should handle clips with missing fields', async () => {
+      await setChromeStorage('clips', []);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 0 })
+      });
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([
+          {
+            id: 'incomplete-clip',
+            text: 'Missing fields'
+            // Missing tags, createdAt, updatedAt
+          }
+        ])
+      });
+
+      const result = await SyncService.syncClips();
+
+      expect(result.success).toBe(true);
+      const clips = await getChromeStorage('clips');
+      expect(clips).toHaveLength(1);
+    });
+
+    test('should deduplicate clips with same ID', async () => {
+      const now = Date.now();
+      
+      await setChromeStorage('clips', [
+        {
+          id: 'dup-clip',
+          text: 'Version 1',
+          tags: [],
+          createdAt: now,
+          updatedAt: now
+        }
+      ]);
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploaded: 1 })
+      });
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ([
+          {
+            id: 'dup-clip',
+            text: 'Version 2',
+            tags: [],
+            createdAt: now,
+            updatedAt: now + 1000,
+            deviceId: 'other-device'
+          }
+        ])
+      });
+
+      await SyncService.syncClips();
+
+      const clips = await getChromeStorage('clips');
+      expect(clips).toHaveLength(1); // Should not duplicate
+      expect(clips[0].text).toBe('Version 2'); // Should keep newer
+    });
+  });
+});
