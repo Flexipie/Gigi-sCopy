@@ -6,9 +6,6 @@ import request from 'supertest';
 import app from '../server.js';
 
 describe('Backend API Routes', () => {
-  // Prevent test timeout issues
-  jest.setTimeout(10000);
-  
 
   describe('Health Endpoints', () => {
     test('GET /health should return 200', async () => {
@@ -25,7 +22,8 @@ describe('Backend API Routes', () => {
         .expect(200);
 
       expect(response.body).toHaveProperty('uptime');
-      expect(response.body).toHaveProperty('memory');
+      expect(response.body).toHaveProperty('system');
+      expect(response.body.system).toHaveProperty('memory');
     });
 
     test('GET /health/live should return liveness', async () => {
@@ -57,28 +55,26 @@ describe('Backend API Routes', () => {
   });
 
   describe('Telemetry Endpoint', () => {
-    test('POST /api/telemetry should accept telemetry data', async () => {
+    test('POST /api/telemetry/clip-saved should accept telemetry data', async () => {
       const telemetryData = {
-        event: 'clip_saved',
-        timestamp: Date.now(),
-        metadata: {
-          tags: ['test'],
-          source: 'context_menu'
-        }
+        source: 'web',
+        isDuplicate: false,
+        tags: ['test'],
+        userId: 'test-user-1'
       };
 
       const response = await request(app)
-        .post('/api/telemetry')
+        .post('/api/telemetry/clip-saved')
         .send(telemetryData)
-        .expect(200);
+        .expect(201);
 
-      expect(response.body.status).toBe('received');
+      expect(response.body.message).toBe('Telemetry recorded');
     });
 
-    test('POST /api/telemetry should reject invalid data', async () => {
+    test('POST /api/telemetry/clip-saved should reject invalid source', async () => {
       await request(app)
-        .post('/api/telemetry')
-        .send({})
+        .post('/api/telemetry/clip-saved')
+        .send({ source: 'invalid' })
         .expect(400);
     });
   });
@@ -92,7 +88,7 @@ describe('Backend API Routes', () => {
 
     test('should handle malformed JSON', async () => {
       await request(app)
-        .post('/api/telemetry')
+        .post('/api/telemetry/clip-saved')
         .set('Content-Type', 'application/json')
         .send('{ invalid json }')
         .expect(400);

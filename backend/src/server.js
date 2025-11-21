@@ -106,36 +106,38 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Graceful shutdown
-const server = app.listen(PORT, () => {
-  logger.info(`🚀 Backend service started`, {
-    port: PORT,
-    environment: NODE_ENV,
-    nodeVersion: process.version
+// Only start server if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  const server = app.listen(PORT, () => {
+    logger.info(`🚀 Backend service started`, {
+      port: PORT,
+      environment: NODE_ENV,
+      nodeVersion: process.version
+    });
+    logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
+    logger.info(`📈 Metrics available at http://localhost:${PORT}/metrics`);
+  }).on('error', (err) => {
+    logger.error('Failed to start server', { error: err.message });
+    console.error('Server start error:', err);
+    process.exit(1);
   });
-  logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
-  logger.info(`📈 Metrics available at http://localhost:${PORT}/metrics`);
-}).on('error', (err) => {
-  logger.error('Failed to start server', { error: err.message });
-  console.error('Server start error:', err);
-  process.exit(1);
-});
 
-// Handle shutdown signals
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
+  // Handle shutdown signals
+  process.on('SIGTERM', () => {
+    logger.info('SIGTERM signal received: closing HTTP server');
+    server.close(() => {
+      logger.info('HTTP server closed');
+      process.exit(0);
+    });
   });
-});
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT signal received: closing HTTP server');
-  server.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
+  process.on('SIGINT', () => {
+    logger.info('SIGINT signal received: closing HTTP server');
+    server.close(() => {
+      logger.info('HTTP server closed');
+      process.exit(0);
+    });
   });
-});
+}
 
 export default app;

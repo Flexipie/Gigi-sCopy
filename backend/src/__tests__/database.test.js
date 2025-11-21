@@ -11,6 +11,7 @@ describe('Database Functions', () => {
   beforeAll(() => {
     // Use in-memory database for tests
     testDb = new Database(':memory:');
+    testDb.pragma('journal_mode = WAL');
     
     // Create test schema
     testDb.exec(`
