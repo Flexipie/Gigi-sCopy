@@ -31,6 +31,13 @@ export class SyncService {
     try {
       console.log('🔄 Starting clip sync...');
       
+      // Check if backend is reachable (with timeout)
+      const backendReachable = await this.checkBackend();
+      if (!backendReachable) {
+        console.warn('⚠️ Backend unreachable, skipping sync');
+        return { success: false, error: 'Backend unreachable' };
+      }
+      
       const deviceId = await getDeviceId();
       const localClips = await getClips();
       
@@ -219,6 +226,27 @@ export class SyncService {
       return true;
     } catch (error) {
       console.error('❌ Full sync failed:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Check if backend is reachable (with short timeout)
+   */
+  static async checkBackend() {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
+      const response = await fetch(`${BACKEND_URL}/health`, {
+        method: 'GET',
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      return response.ok;
+    } catch (error) {
+      console.warn('Backend check failed:', error.message);
       return false;
     }
   }

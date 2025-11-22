@@ -4,7 +4,7 @@
 import { getActiveFolderId } from './storage.js';
 import { ClipService } from './services/ClipService.js';
 import { SyncService } from './services/SyncService.js';
-import { CONFIG, RESTRICTED_URL_PREFIXES, CLIP_SOURCES } from './constants.js';
+import { CONFIG, RESTRICTED_URL_PREFIXES, CLIP_SOURCES, isPdfUrl } from './constants.js';
 
 const { MENU_ID, NATIVE_HOST, NATIVE_DRAIN_INTERVAL_MINUTES, TAG_RECOMPUTE_DEBOUNCE_MS } = CONFIG;
 
@@ -20,10 +20,12 @@ chrome.runtime.onInstalled.addListener(async () => {
     // do an immediate drain on install to avoid waiting for first alarm
     drainDesktopQueue();
     
-    // Create sync alarm (sync every 5 minutes)
-    chrome.alarms.create('clip-sync', { periodInMinutes: 5 });
-    // Do immediate sync on install
-    SyncService.syncClips().catch(err => console.warn('Initial sync failed:', err));
+    // Create sync alarm (sync every 15 minutes to reduce errors)
+    chrome.alarms.create('clip-sync', { periodInMinutes: 15 });
+    // Do immediate sync on install (delayed to let backend startup)
+    setTimeout(() => {
+      SyncService.syncClips().catch(err => console.warn('Initial sync failed:', err));
+    }, 5000);
   } catch (e) {
     // Ignore if already exists
   }
@@ -34,11 +36,13 @@ if (chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
     try { 
       chrome.alarms.create('desktop-drain', { periodInMinutes: NATIVE_DRAIN_INTERVAL_MINUTES });
-      chrome.alarms.create('clip-sync', { periodInMinutes: 5 });
+      chrome.alarms.create('clip-sync', { periodInMinutes: 15 });
     } catch (_) {}
-    // immediate drain and sync on startup
+    // immediate drain and sync on startup (delayed)
     drainDesktopQueue();
-    SyncService.syncClips().catch(err => console.warn('Startup sync failed:', err));
+    setTimeout(() => {
+      SyncService.syncClips().catch(err => console.warn('Startup sync failed:', err));
+    }, 5000);
   });
 }
 
@@ -146,11 +150,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command === 'save-selection') {
-    const tab = await getActiveTab();
-    if (tab?.id != null) await handleSaveSelection(tab.id, tab);
-  } else if (command === 'toggle-popup') {
-    await openOrToggleUI();
+  try {
+    if (command === 'save-selection') {
+      const tab = await getActiveTab();
+      if (!tab?.id) {
+        console.warn('No active tab for save-selection command');
+        return;
+      }
+      await handleSaveSelection(tab.id, tab);
+    } else if (command === 'toggle-popup') {
+      await openOrToggleUI();
+    }
+  } catch (error) {
+    console.error('Command handler error:', error);
+    showNotification('Command Failed', error.message || 'Please try again');
   }
 });
 
@@ -191,7 +204,22 @@ async function handleSaveSelection(tabId, tabMeta) {
     const isRestricted = RESTRICTED_URL_PREFIXES.some(prefix => url.startsWith(prefix));
     if (isRestricted) {
       console.log('Cannot save selection from restricted page:', url);
+      showNotification('Cannot save from this page', 'Chrome extensions cannot access this page type.');
       return;
+    }
+    
+    // Handle PDFs specially
+    const isPdf = isPdfUrl(url);
+    if (isPdf) {
+      console.log('Attempting to save from PDF:', url);
+      // PDFs in Chrome use a special viewer, we can still try but may fail
+      try {
+        await handlePdfSelection(tabId, tabMeta);
+        return;
+      } catch (pdfError) {
+        console.warn('PDF selection failed, trying normal method:', pdfError);
+        // Fall through to normal method as fallback
+      }
     }
 
     // 1) Capture selection (text + rects) across all frames
@@ -360,4 +388,51 @@ async function injectToast(tabId, frameId, text) {
       } catch (_) {}
     }
   });
+}
+
+// Helper function to show notifications
+async function showNotification(title, message) {
+  try {
+    await chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/48.png',
+      title: title,
+      message: message,
+      priority: 1
+    });
+  } catch (error) {
+    console.log('Notification failed:', error);
+  }
+}
+
+// Handle PDF selection (Chrome PDF viewer)
+async function handlePdfSelection(tabId, tabMeta) {
+  // For PDFs, try to use the clipboard API via content script
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      // In PDF viewer, selection works but we need to access it differently
+      const selection = window.getSelection();
+      return selection ? selection.toString().trim() : '';
+    }
+  });
+  
+  const text = results?.[0]?.result;
+  if (!text) {
+    showNotification('No text selected', 'Please select text in the PDF first');
+    return;
+  }
+  
+  // Save the clip
+  const activeFolderId = await getActiveFolderId();
+  const clip = await ClipService.createClip({
+    text,
+    source: CLIP_SOURCES.WEB,
+    url: tabMeta.url,
+    title: tabMeta.title || 'PDF Document',
+    folderId: activeFolderId
+  });
+  
+  console.log('PDF clip saved:', clip.id);
+  showToastInTab(tabId, 'Saved from PDF');
 }

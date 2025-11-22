@@ -50,8 +50,20 @@ export const RESTRICTED_URL_PREFIXES = [
   'chrome://',
   'chrome-extension://',
   'edge://',
-  'about:'
+  'about:',
+  'chrome-error://',
+  'view-source:'
 ];
+
+// PDF URLs need special handling
+export const PDF_EXTENSIONS = ['.pdf'];
+export function isPdfUrl(url) {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return PDF_EXTENSIONS.some(ext => lower.includes(ext)) || 
+         lower.includes('application/pdf') ||
+         lower.includes('data:application/pdf');
+}
 
 // Copy Formats
 export const COPY_FORMATS = {
