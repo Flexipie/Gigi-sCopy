@@ -51,8 +51,8 @@ jobs:
           path: backend/backend-image.tar
           retention-days: 1
 
-  push-to-acr:
-    name: Push to Azure Container Registry
+  deploy-to-azure:
+    name: Deploy to Azure Container Instances
     runs-on: ubuntu-latest
     needs: build-and-test
     if: github.ref == 'refs/heads/main'
@@ -62,6 +62,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: backend-image
+      
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
       
       - name: Login to Azure Container Registry
         uses: azure/docker-login@v1
@@ -80,19 +85,29 @@ jobs:
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/gigis-backend:latest
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/gigis-backend:${{ github.sha }}
       
-      - name: Deployment Instructions
+      - name: Deploy to Azure Container Instances
         run: |
-          echo "✅ Docker image pushed to ACR successfully!"
+          echo "🚀 Restarting Azure Container Instance..."
+          az container restart \
+            --name gigis-backend-felix \
+            --resource-group BCSAI2025-DEVOPS-STUDENTS-B \
+            --no-wait
+          
+          echo "⏳ Waiting for container to stabilize..."
+          sleep 15
+          
+          echo "✅ Deployment initiated!"
+      
+      - name: Verify Deployment
+        run: |
+          echo "📊 Container Status:"
+          az container show \
+            --name gigis-backend-felix \
+            --resource-group BCSAI2025-DEVOPS-STUDENTS-B \
+            --query "{Status:instanceView.state,Image:containers[0].image,RestartCount:containers[0].instanceView.restartCount}" \
+            --output table
+          
           echo ""
-          echo "📦 Image: ${{ secrets.ACR_LOGIN_SERVER }}/gigis-backend:latest"
-          echo "🔖 Tagged: ${{ secrets.ACR_LOGIN_SERVER }}/gigis-backend:${{ github.sha }}"
-          echo ""
-          echo "🚀 To deploy, run this command in your terminal:"
-          echo ""
-          echo "az container restart --name gigis-backend-felix --resource-group BCSAI2025-DEVOPS-STUDENTS-B"
-          echo ""
-          echo "OR if the container doesn't exist yet:"
-          echo ""
-          echo "az container create --resource-group BCSAI2025-DEVOPS-STUDENTS-B --name gigis-backend-felix --image ${{ secrets.ACR_LOGIN_SERVER }}/gigis-backend:latest --cpu 1 --memory 1.5 --ports 3000 --ip-address Public --location eastus --registry-login-server ${{ secrets.ACR_LOGIN_SERVER }} --registry-username ${{ secrets.ACR_USERNAME }} --registry-password ${{ secrets.ACR_PASSWORD }}"
-          echo ""
-          echo "🔗 Once deployed, access at: http://gigis-backend-felix.eastus.azurecontainer.io:3000"
+          echo "🔗 Backend URL: http://gigis-backend-felix.eastus.azurecontainer.io:3000"
+          echo "🏥 Health Check: http://gigis-backend-felix.eastus.azurecontainer.io:3000/health"
+          echo "� Metrics: http://gigis-backend-felix.eastus.azurecontainer.io:3000/metrics"
