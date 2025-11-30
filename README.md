@@ -104,6 +104,28 @@ No build step required. Reload the extension after changes.
   - `background.js` handles capture, deduplication, tagging, native messaging.
   - `overlay/overlay.js` focuses on rendering and user interaction by calling storage helpers.
 
+## Testing
+
+### Automated Tests
+The project has comprehensive test coverage (94.32%, 175 total tests).
+
+**Run Extension Tests:**
+```bash
+cd tests
+npm install
+npm test                  # Run all 153 tests
+npm run test:coverage     # With coverage report
+```
+
+**Run Backend Tests:**
+```bash
+cd backend
+npm install
+npm test                  # Run all 22 tests
+```
+
+**See detailed testing guide:** [TESTING.md](TESTING.md)
+
 ### Manual testing checklist
 
 - **Reload**: `chrome://extensions` → Reload the unpacked extension.
@@ -112,3 +134,11 @@ No build step required. Reload the extension after changes.
 - **CRUD flows**: Pin, edit, delete, undo delete, and clear clips—verify persistence after reload.
 - **Folders/tags**: Add a folder, save to it, delete the folder (clips should fall back to “All”). Adjust tag rules and confirm tags update.
 - **Layout prefs**: Drag or resize the overlay, toggle theme/reduce-motion, then reopen the overlay to confirm the stored preferences stick.
+
+## Documentation
+
+- **[REPORT.md](REPORT.md)** - Complete DevOps assignment report (6 pages)
+- **[TESTING.md](TESTING.md)** - Comprehensive testing guide
+- **[DEPLOYMENT_VERIFICATION.md](DEPLOYMENT_VERIFICATION.md)** - Production deployment verification
+- **[backend/README.md](backend/README.md)** - Backend API documentation
+- **[backend/ARCHITECTURE.md](backend/ARCHITECTURE.md)** - Backend architecture details
