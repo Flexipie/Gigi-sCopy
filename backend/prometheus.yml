@@ -45,13 +45,3 @@ scrape_configs:
       - source_labels: [__address__]
         target_label: instance
         replacement: 'backend:3000'
-
-  # Health check endpoint monitoring
-  - job_name: 'health-checks'
-    scrape_interval: 30s
-    metrics_path: '/health/detailed'
-    static_configs:
-      - targets: ['backend:3000']
-        labels:
-          service: 'health-check'
-          check_type: 'detailed'

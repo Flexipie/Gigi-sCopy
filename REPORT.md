@@ -1,13 +1,14 @@
 # DevOps Assignment Report
 **Project:** Gigi's Copy Tool - Chrome Extension  
 **Student:** Felix  
-**Date:** November 2025
+**Date:** November 2025     
+**Disclaimer** AI was used for structuring this report for markdown :)
 
 ---
 
 ## Executive Summary
 
-This report documents the improvements made to the Chrome Extension project to meet DevOps best practices, including code refactoring, comprehensive testing, CI/CD automation, and the addition of a backend microservice for cross-device synchronization.
+This report documents the improvements made to the Chrome Extension Gigi's Copy Tool project to better use best practices, including code refactoring especially for code smells, comprehensive testing, CI/CD pipeline, and the addition of a backend microservice for cross-device synchronization, and health endpoints for monitoring. As the actual chrome extension is not able to be dockerised or have endpoints, the backend microservice is used as a workaround.
 
 ---
 
@@ -15,8 +16,8 @@ This report documents the improvements made to the Chrome Extension project to m
 
 ### Refactoring & Architecture
 - **Extracted Services:** Created dedicated service classes (`ClipService`, `DedupService`, `TagRuleEngine`, `SyncService`) following Single Responsibility Principle
-- **Removed Code Smells:** Eliminated code duplication, extracted long methods, removed hardcoded values into `constants.js`
-- **SOLID Principles:** Applied dependency injection, interface segregation, and separated concerns across modules
+- **Removed Code Smells:** Eliminated code duplication, extracted long methods, removed all hardcoded values into `constants.js`
+- **SOLID Principles:** Applied dependency injection, interface segregation, and separated concerns across the different modules
 - **File Structure:**
   ```
   ChromeExtension/
@@ -29,17 +30,11 @@ This report documents the improvements made to the Chrome Extension project to m
 
 ### Testing Infrastructure
 - **153 Automated Tests:** 8 unit test suites + 1 integration test suite
-- **Coverage:** Achieved **94.32%** code coverage (exceeds 70% requirement by 24%)
+- **Coverage:** Achieved **94.32%** code coverage
 - **Test Types:**
   - Unit tests for services, storage, utilities
   - Integration tests for end-to-end workflows
   - Edge case testing for error handling
-
-**Key Metrics:**
-- Lines: 94.32%
-- Statements: 94.43%
-- Functions: 95.08%
-- Branches: 90.90%
 
 ---
 
@@ -47,7 +42,7 @@ This report documents the improvements made to the Chrome Extension project to m
 
 ### Problem & Solution
 **Original Challenge:** Chrome extensions have limited cross-device sync capabilities.  
-**Solution:** Implemented a Node.js backend microservice to enable clip synchronization across devices.
+**Solution:** Implemented a Node.js backend microservice to enable clip synchronization across devices, as well as then allowing me to containerise the extension backend and deploy it to Azure.
 
 ### Backend Architecture
 - **Framework:** Node.js + Express
@@ -57,10 +52,10 @@ This report documents the improvements made to the Chrome Extension project to m
 
 ### Sync Service Implementation
 **Extension-Side (`SyncService.js`):**
-- Automatic sync every 5 minutes via Chrome alarms
+- Automatic sync every 5 minutes using Chrome alarms
 - Two-way synchronization (upload local clips, download remote clips)
 - Conflict resolution using last-write-wins strategy
-- Device ID tracking for multi-device support
+- Device ID tracking
 
 **Backend-Side:**
 - 8 API endpoints for clip management
@@ -79,7 +74,7 @@ This report documents the improvements made to the Chrome Extension project to m
 1. **Test & Coverage** (Node 18.x, 20.x)
    - Runs 153 automated tests
    - Measures code coverage
-   - Enforces 70% threshold (fails build if below)
+   - Enforces 70% threshold otherwise it fails
    - Uploads coverage reports to Codecov
 
 2. **Validate Extension**
@@ -92,7 +87,7 @@ This report documents the improvements made to the Chrome Extension project to m
    - Creates distributable artifact
    - Only runs if tests pass
 
-**Trigger:** Runs on every push to `main`, `develop`, and feature branches
+**Trigger:** Runs on every push to `main`,
 
 ---
 
@@ -101,7 +96,7 @@ This report documents the improvements made to the Chrome Extension project to m
 ### Docker Containerization
 **File:** `backend/Dockerfile`
 - Multi-stage build for optimized image size
-- Production-ready Node.js Debian-slim base (switched from Alpine for better-sqlite3 compatibility)
+- Production-ready Node.js now usingDebian-slim base (switched from Alpine for better-sqlite3 compatibility, because the container instance kept crashing as soon as the image was built but this ended up working)
 - Non-root user for security
 - Health check endpoint configured
 
@@ -111,7 +106,7 @@ This report documents the improvements made to the Chrome Extension project to m
 
 **Deployment Process:**
 1. Build Docker image with Docker Buildx for `linux/amd64` architecture
-2. Push to Azure Container Registry (ACR) with automatic tagging
+2. Push to Azure Container Registry with automatic tagging
 3. Restart container instance to pull latest image
 4. Expose on public endpoint with DNS label
 
@@ -171,23 +166,16 @@ This report documents the improvements made to the Chrome Extension project to m
 
 ## 7. Technical Decisions
 
-### Why Node.js Backend?
+### Node.js Backend
 - JavaScript ecosystem consistency with Chrome extension
-- Express.js provides lightweight, fast API framework
+- Express.js provides a very lightweight, fast API
 - Easy integration with Azure services
-- Excellent Docker support
 
 ### Why SQLite?
-- Zero-configuration database
+- its a Zero-configuration database
 - Perfect for single-instance deployments
-- Sufficient for assignment requirements
-- Easy backup and portability
+- Easy backup
 
-### Why Azure Container Instances?
-- Serverless container deployment (no VM management)
-- Quick deployment process
-- Cost-effective for demo/assignment
-- Native integration with Azure Container Registry
 
 ---
 
@@ -206,22 +194,13 @@ This report documents the improvements made to the Chrome Extension project to m
 **Solution:** Switched from `node:20-alpine` to `node:20-slim` (Debian-based) to ensure native modules compile correctly for the target environment
 
 ### Challenge 4: Azure AD Permissions
-**Problem:** Cannot create service principal with student account  
-**Solution:** Used existing service principal credentials provided by professor for automatic deployment
-
-### Challenge 5: Container Instance Quota
-**Problem:** West Europe region exhausted  
-**Solution:** Deployed to East US region successfully
+**Problem:** At first I wasn't able to create a service prinicpe due to permission issues
+**Solution:** Used instead an existing service principal credentials provided by professor for automatic deployment
 
 ---
 
 ## 9. Project Statistics
 
-**Codebase:**
-- Extension: ~3,500 lines of JavaScript
-- Backend: ~2,000 lines of JavaScript
-- Tests: ~2,500 lines of test code
-- Total: ~8,000 lines of code
 
 **Repository:**
 - GitHub: https://github.com/Flexipie/Gigi-sCopy
@@ -231,24 +210,10 @@ This report documents the improvements made to the Chrome Extension project to m
 **Infrastructure:**
 - Azure Container Registry: 1 registry
 - Container Instances: 1 instance (1 vCPU, 1.5GB RAM)
-- Public Endpoint: ✅ Functional
+- Public Endpoint: Functional
 
 ---
 
-## 10. Conclusion
-
-This project successfully demonstrates modern DevOps practices including:
-- High-quality, well-tested code (94% coverage)
-- Automated CI pipeline with quality gates
-- Containerized microservice architecture
-- Cloud deployment with monitoring
-- Professional documentation and reporting
-
-The addition of the backend sync service not only solved the cross-device limitation but also provided an opportunity to implement a full-stack DevOps workflow including containerization, cloud deployment, and production monitoring.
-
-All assignment requirements have been met or exceeded, with particular strengths in code quality (94% vs 70% required coverage) and comprehensive monitoring infrastructure.
-
----
 
 **Repository:** https://github.com/Flexipie/Gigi-sCopy  
 **Backend:** http://gigis-backend-felix.eastus.azurecontainer.io:3000

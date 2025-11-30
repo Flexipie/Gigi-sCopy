@@ -26,13 +26,6 @@ cd tests
 npm test
 ```
 
-**Expected Output:**
-```
-Test Suites: 7 passed, 7 total
-Tests:       153 passed, 153 total
-Time:        ~1s
-```
-
 ### Run Tests with Coverage
 ```bash
 cd tests
@@ -116,13 +109,6 @@ cd backend
 npm test
 ```
 
-**Expected Output:**
-```
-Test Suites: 2 passed, 2 total
-Tests:       22 passed, 22 total
-Time:        ~2s
-```
-
 ### Test Suites Included
 
 1. **`database.test.js`** (10 tests)
@@ -154,7 +140,7 @@ NODE_ENV=test node --inspect-brk node_modules/.bin/jest --runInBand
 ## 🚀 CI/CD Pipeline Tests
 
 ### Extension CI
-Runs automatically on push to `main`, `develop`, or feature branches.
+Runs automatically on push to `main`
 
 **Manual Trigger:**
 ```bash
@@ -247,7 +233,7 @@ curl "http://57.152.29.139:3000/api/clips?since=1234567890000"
 
 ---
 
-## 📊 Coverage Reports
+##  Coverage Reports
 
 ### View HTML Coverage Report (Extension)
 ```bash
@@ -331,20 +317,3 @@ Backend:
 ├─ API routes: 100%
 └─ Database operations: 100%
 ```
-
----
-
-## 🎯 Test Philosophy
-
-1. **Test behavior, not implementation**
-2. **Mock external dependencies**
-3. **Test edge cases and error handling**
-4. **Keep tests fast (<5s total)**
-5. **Write descriptive test names**
-6. **Maintain >70% coverage**
-
----
-
-**Last Updated:** November 30, 2025  
-**Test Count:** 175 (153 extension + 22 backend)  
-**Coverage:** 94.32% (Extension)
