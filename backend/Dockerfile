@@ -1,32 +1,31 @@
 # Stage 1: Build stage
-FROM --platform=linux/amd64 node:20-alpine AS builder
+FROM --platform=linux/amd64 node:20-slim AS builder
 
 # Set working directory
 WORKDIR /app
 
-# Install build dependencies for native modules (better-sqlite3)
-RUN apk add --no-cache python3 make g++
+# Install build dependencies for native modules
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3 make g++ && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies and force rebuild of native modules for Alpine/musl
-RUN npm ci --ignore-scripts && \
-    npm rebuild better-sqlite3 && \
+# Install dependencies (better-sqlite3 will compile for Debian/glibc)
+RUN npm ci --only=production && \
     npm cache clean --force
 
 # Stage 2: Production stage
-FROM --platform=linux/amd64 node:20-alpine
+FROM --platform=linux/amd64 node:20-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install runtime dependencies for better-sqlite3
-RUN apk add --no-cache libstdc++
-
 # Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+RUN groupadd -g 1001 nodejs && \
+    useradd -r -u 1001 -g nodejs nodejs
 
 # Copy dependencies from builder (includes compiled native modules)
 COPY --from=builder /app/node_modules ./node_modules
