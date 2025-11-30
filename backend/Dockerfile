@@ -1,5 +1,5 @@
 # Stage 1: Build stage
-FROM node:20-alpine AS builder
+FROM --platform=linux/amd64 node:20-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -10,12 +10,13 @@ RUN apk add --no-cache python3 make g++
 # Copy package files
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies for build)
-RUN npm ci && \
+# Install dependencies and force rebuild of native modules for Alpine/musl
+RUN npm ci --ignore-scripts && \
+    npm rebuild better-sqlite3 && \
     npm cache clean --force
 
 # Stage 2: Production stage
-FROM node:20-alpine
+FROM --platform=linux/amd64 node:20-alpine
 
 # Set working directory
 WORKDIR /app

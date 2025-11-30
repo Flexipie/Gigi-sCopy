@@ -45,6 +45,7 @@ jobs:
         run: |
           docker buildx build \
             --platform linux/amd64 \
+            --no-cache \
             --load \
             -t ${{ env.AZURE_WEBAPP_NAME }}:${{ github.sha }} .
       
